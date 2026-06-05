@@ -1,27 +1,27 @@
 {
   "expo": {
-    "name": "Coaching Center",
-    "slug": "coaching-center-mobile",
+    "name": "GyneClinics",
+    "slug": "gyneclinics-mobile",
     "version": "1.0.0",
-    "scheme": "coachingcenter",
+    "scheme": "gyneclinics",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "backgroundColor": "#0F172A"
+      "backgroundColor": "#ffffff"
     },
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.coachingcenter.mobile"
+      "bundleIdentifier": "com.gyneclinics.mobile"
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#0F172A"
+        "backgroundColor": "#d13a8b"
       },
-      "package": "com.coachingcenter.mobile",
+      "package": "com.gyneclinics.mobile",
       "edgeToEdgeEnabled": true
     },
     "web": {
@@ -33,7 +33,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#0F172A"
+          "backgroundColor": "#ffffff"
         }
       ],
       "expo-asset"
