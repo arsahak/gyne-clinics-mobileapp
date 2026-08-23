@@ -36,7 +36,14 @@
           "backgroundColor": "#ffffff"
         }
       ],
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow GyneClinics to access your photos so you can choose a profile picture or attach an image.",
+          "cameraPermission": "Allow GyneClinics to use your camera so you can take a profile picture."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

@@ -1,8 +1,16 @@
+import { COUNTRIES, Country, flagEmoji } from "@/constants/countries";
+import { DOCTOR_ACCENT } from "@/constants/theme";
+import { api } from "@/lib/api";
 import { useTheme } from "@/theme";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
+  Alert,
+  Animated,
+  FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -28,6 +36,30 @@ function PhoneIcon({ color }: { color: string }) {
     <Svg width={17} height={17} viewBox="0 0 24 24" fill="none">
       <Path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.85 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.77 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.74a16 16 0 0 0 5.55 5.55l1.1-1.1a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"
         stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+function DoctorIcon({ color }: { color: string }) {
+  return (
+    <Svg width={13} height={13} viewBox="0 0 24 24" fill="none">
+      <Path d="M5 3v6a4 4 0 0 0 8 0V3" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M9 13v2a5 5 0 0 0 10 0v-2.5" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
+      <Circle cx="19" cy="12.5" r="1.8" stroke={color} strokeWidth={2.2} />
+    </Svg>
+  );
+}
+function ChevronDownIcon({ color }: { color: string }) {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+      <Path d="M6 9l6 6 6-6" stroke={color} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+function SearchIcon({ color }: { color: string }) {
+  return (
+    <Svg width={16} height={16} viewBox="0 0 24 24" fill="none">
+      <Circle cx="11" cy="11" r="7" stroke={color} strokeWidth={2} />
+      <Path d="M21 21l-4.3-4.3" stroke={color} strokeWidth={2} strokeLinecap="round" />
     </Svg>
   );
 }
@@ -85,16 +117,79 @@ export default function LoginScreen() {
   const pinkLite = colors.primaryLight;
   const purple   = colors.secondary;
 
+  const [role,    setRole]    = useState<"patient" | "doctor">("patient");
   const [phone,   setPhone]   = useState("");
   const [agreed,  setAgreed]  = useState(false);
   const [focused, setFocused] = useState(false);
 
+  // Country code picker
+  const [country, setCountry]       = useState<Country>(COUNTRIES[0]!);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [search, setSearch]         = useState("");
+
+  const filteredCountries = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return COUNTRIES;
+    return COUNTRIES.filter(c => c.name.toLowerCase().includes(q) || c.dial.includes(q));
+  }, [search]);
+
+  const openPicker  = () => { setSearch(""); setPickerOpen(true); };
+  const closePicker = () => setPickerOpen(false);
+  const pickCountry  = (c: Country) => { setCountry(c); closePicker(); };
+
+  // Sliding tab indicator: 0 = Patient, 1 = Doctor
+  const [tabBarWidth, setTabBarWidth] = useState(0);
+  const tabAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.spring(tabAnim, {
+      toValue: role === "doctor" ? 1 : 0,
+      useNativeDriver: false,
+      friction: 9,
+      tension: 80,
+    }).start();
+  }, [role]);
+
+  const tabPad     = 4;
+  const tabGap     = 4;
+  const pillWidth  = tabBarWidth > 0 ? (tabBarWidth - tabPad * 2 - tabGap) / 2 : 0;
+  const tabIndicatorStyle = {
+    width: pillWidth,
+    backgroundColor: tabAnim.interpolate({ inputRange: [0, 1], outputRange: [pink, DOCTOR_ACCENT] }),
+    transform: [{ translateX: tabAnim.interpolate({ inputRange: [0, 1], outputRange: [0, pillWidth + tabGap] }) }],
+  };
+
+  // Whole-page accent: pink for Patient, teal for Doctor
+  const accent     = role === "doctor" ? DOCTOR_ACCENT : pink;
+  const accentLite = role === "doctor" ? DOCTOR_ACCENT + "1A" : pinkLite;
+
   const valid     = phone.trim().length >= 7;
   const canSubmit = valid && agreed;
 
-  const handleContinue = () => {
-    if (!canSubmit) return;
-    router.push({ pathname: "/verify-otp", params: { phone } });
+  const [sending, setSending] = useState(false);
+
+  const toE164 = (dialCode: string, local: string) => {
+    const digits = local.replace(/\D/g, "").replace(/^0+/, "");
+    return `${dialCode}${digits}`;
+  };
+
+  const handleContinue = async () => {
+    if (!canSubmit || sending) return;
+
+    const e164Phone = toE164(country.dial, phone);
+    setSending(true);
+    const result = await api("/api/auth/otp/send", {
+      method: "POST",
+      body: { phone: e164Phone, role },
+    });
+    setSending(false);
+
+    if (!result.ok) {
+      Alert.alert("Couldn't send code", result.message);
+      return;
+    }
+
+    router.push({ pathname: "/verify-otp", params: { phone: e164Phone, role } });
   };
 
   return (
@@ -108,19 +203,19 @@ export default function LoginScreen() {
 
           {/* ── Top hero area ── */}
           <View style={s.hero}>
-            <TopBlob pink={pink} />
+            <TopBlob pink={accent} />
 
             {/* floating decorative icons */}
-            <View style={[s.floatBubble, s.floatTL, { backgroundColor: pinkLite, borderColor: pink + "33" }]}>
-              <HeartIcon color={pink} />
+            <View style={[s.floatBubble, s.floatTL, { backgroundColor: accentLite, borderColor: accent + "33" }]}>
+              <HeartIcon color={accent} />
             </View>
-            <View style={[s.floatBubble, s.floatTR, { backgroundColor: pinkLite, borderColor: pink + "33" }]}>
-              <StarIcon color={pink} />
+            <View style={[s.floatBubble, s.floatTR, { backgroundColor: accentLite, borderColor: accent + "33" }]}>
+              <StarIcon color={accent} />
             </View>
 
             {/* centre avatar ring */}
-            <View style={[s.avatarRing, { borderColor: pink + "40", backgroundColor: pinkLite }]}>
-              <View style={[s.avatarInner, { backgroundColor: pink }]}>
+            <View style={[s.avatarRing, { borderColor: accent + "40", backgroundColor: accentLite }]}>
+              <View style={[s.avatarInner, { backgroundColor: accent }]}>
                 <UserIcon color="#fff" />
               </View>
             </View>
@@ -129,19 +224,36 @@ export default function LoginScreen() {
           {/* ── Card form ── */}
           <View style={[s.card, {
             backgroundColor: colors.surface,
-            shadowColor: isDark ? "#000" : pink,
+            shadowColor: isDark ? "#000" : accent,
           }]}>
 
             {/* Welcome heading */}
             <Text style={[s.title, { color: colors.text }]}>Welcome Back 👋</Text>
             <Text style={[s.subtitle, { color: colors.textMuted }]}>
-              Enter your mobile number to securely access your health records.
+              {role === "doctor"
+                ? "Enter your mobile number to securely access your clinic dashboard."
+                : "Enter your mobile number to securely access your health records."}
             </Text>
 
-            {/* Patient chip — left aligned */}
-            <View style={[s.chip, { borderColor: pink, backgroundColor: pinkLite }]}>
-              <UserIcon color={pink} />
-              <Text style={[s.chipText, { color: pink }]}>PATIENT ACCOUNT</Text>
+            {/* Role tabs — Patient / Doctor */}
+            <View
+              style={[s.tabBar, { borderColor: colors.border, backgroundColor: colors.background }]}
+              onLayout={e => setTabBarWidth(e.nativeEvent.layout.width)}
+            >
+              {tabBarWidth > 0 && <Animated.View style={[s.tabIndicator, tabIndicatorStyle]} />}
+
+              <Pressable style={s.tabBtn} onPress={() => setRole("patient")}>
+                <UserIcon color={role === "patient" ? "#fff" : colors.textMuted} />
+                <Text style={[s.tabText, { color: role === "patient" ? "#fff" : colors.textMuted }]}>
+                  Patient
+                </Text>
+              </Pressable>
+              <Pressable style={s.tabBtn} onPress={() => setRole("doctor")}>
+                <DoctorIcon color={role === "doctor" ? "#fff" : colors.textMuted} />
+                <Text style={[s.tabText, { color: role === "doctor" ? "#fff" : colors.textMuted }]}>
+                  Doctor
+                </Text>
+              </Pressable>
             </View>
 
             {/* Phone label */}
@@ -150,16 +262,17 @@ export default function LoginScreen() {
             {/* Phone input */}
             <View style={[
               s.inputRow,
-              { borderColor: focused ? pink : colors.border, backgroundColor: colors.background },
-              focused && { shadowColor: pink, shadowOpacity: 0.18, shadowRadius: 8, elevation: 3 },
+              { borderColor: focused ? accent : colors.border, backgroundColor: colors.background },
+              focused && { shadowColor: accent, shadowOpacity: 0.18, shadowRadius: 8, elevation: 3 },
             ]}>
-              <View style={[s.prefixWrap, { borderRightColor: colors.border }]}>
-                <PhoneIcon color={focused ? pink : colors.textMuted} />
-                <Text style={[s.prefix, { color: focused ? pink : colors.text }]}>+44</Text>
-              </View>
+              <Pressable style={[s.prefixWrap, { borderRightColor: colors.border }]} onPress={openPicker}>
+                <Text style={s.flag}>{flagEmoji(country.iso2)}</Text>
+                <Text style={[s.prefix, { color: focused ? accent : colors.text }]}>{country.dial}</Text>
+                <ChevronDownIcon color={colors.textMuted} />
+              </Pressable>
               <TextInput
                 style={[s.phoneInput, { color: colors.text }]}
-                placeholder="7700 000 000"
+                placeholder="Phone number"
                 placeholderTextColor={colors.textMuted}
                 keyboardType="phone-pad"
                 value={phone}
@@ -181,7 +294,7 @@ export default function LoginScreen() {
             <Pressable style={s.checkRow} onPress={() => setAgreed(v => !v)}>
               <View style={[
                 s.checkbox,
-                { backgroundColor: agreed ? pink : "transparent", borderColor: agreed ? pink : colors.border },
+                { backgroundColor: agreed ? accent : "transparent", borderColor: agreed ? accent : colors.border },
               ]}>
                 {agreed && (
                   <Svg width={10} height={10} viewBox="0 0 24 24" fill="none">
@@ -191,27 +304,47 @@ export default function LoginScreen() {
                 )}
               </View>
               <Text style={[s.checkText, { color: colors.textMuted }]}>
-                I agree to the{" "}
-                <Text style={{ color: pink, fontWeight: "700" }}>Privacy Policy</Text>
-                {" "}and consent to health-related notifications.
+                {role === "doctor" ? (
+                  <>
+                    I confirm my professional details are accurate and accept the{" "}
+                    <Text style={{ color: accent, fontWeight: "700" }}>Terms of Service</Text>
+                    {" "}and{" "}
+                    <Text style={{ color: accent, fontWeight: "700" }}>Privacy Policy</Text>
+                    , and consent to verification of my credentials.
+                  </>
+                ) : (
+                  <>
+                    I have read and accept the{" "}
+                    <Text style={{ color: accent, fontWeight: "700" }}>Medical Disclaimer</Text>
+                    {" "}and{" "}
+                    <Text style={{ color: accent, fontWeight: "700" }}>Privacy Policy</Text>
+                    , and consent to the collection and use of my health data for care and communication.
+                  </>
+                )}
               </Text>
             </Pressable>
 
             {/* CTA */}
             <Pressable
               onPress={handleContinue}
-              disabled={!canSubmit}
-              style={[s.ctaBtn, { backgroundColor: canSubmit ? pink : colors.border, opacity: canSubmit ? 1 : 0.55 }]}
+              disabled={!canSubmit || sending}
+              style={[s.ctaBtn, { backgroundColor: canSubmit ? accent : colors.border, opacity: canSubmit && !sending ? 1 : 0.55 }]}
             >
-              <PhoneIcon color="#fff" />
-              <Text style={s.ctaText}>Get Verification Code</Text>
+              {sending ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <PhoneIcon color="#fff" />
+                  <Text style={s.ctaText}>Get Verification Code</Text>
+                </>
+              )}
             </Pressable>
 
             {/* Secure badge */}
             <View style={[s.secureBadge, { backgroundColor: colors.background, borderColor: colors.border }]}>
               <ShieldIcon color={purple} />
               <Text style={[s.secureText, { color: colors.textMuted }]}>
-                256-bit encrypted &amp; HIPAA compliant
+                Encrypted in transit &amp; at rest
               </Text>
             </View>
 
@@ -224,6 +357,48 @@ export default function LoginScreen() {
 
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Country code picker */}
+      <Modal visible={pickerOpen} animationType="slide" transparent onRequestClose={closePicker}>
+        <Pressable style={s.modalBackdrop} onPress={closePicker} />
+        <View style={[s.modalSheet, { backgroundColor: colors.surface }]}>
+          <View style={s.modalHandle} />
+          <Text style={[s.modalTitle, { color: colors.text }]}>Select Country</Text>
+
+          <View style={[s.searchRow, { borderColor: colors.border, backgroundColor: colors.background }]}>
+            <SearchIcon color={colors.textMuted} />
+            <TextInput
+              style={[s.searchInput, { color: colors.text }]}
+              placeholder="Search country or code"
+              placeholderTextColor={colors.textMuted}
+              value={search}
+              onChangeText={setSearch}
+              autoFocus
+            />
+          </View>
+
+          <FlatList
+            data={filteredCountries}
+            keyExtractor={item => item.iso2}
+            keyboardShouldPersistTaps="handled"
+            renderItem={({ item }) => (
+              <Pressable
+                style={[s.countryRow, { borderBottomColor: colors.border }]}
+                onPress={() => pickCountry(item)}
+              >
+                <Text style={s.flag}>{flagEmoji(item.iso2)}</Text>
+                <Text style={[s.countryName, { color: colors.text }]} numberOfLines={1}>
+                  {item.name}
+                </Text>
+                <Text style={[s.countryDial, { color: colors.textMuted }]}>{item.dial}</Text>
+              </Pressable>
+            )}
+            ListEmptyComponent={
+              <Text style={[s.noResults, { color: colors.textMuted }]}>No countries match.</Text>
+            }
+          />
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -274,15 +449,23 @@ const s = StyleSheet.create({
   title:    { fontSize: 28, fontWeight: "900", letterSpacing: -0.4, marginBottom: 6 },
   subtitle: { fontSize: 14, lineHeight: 22, marginBottom: 20 },
 
-  // Chip — left aligned
-  chip:     {
-    flexDirection: "row", alignItems: "center", gap: 7,
-    alignSelf: "flex-start",
-    paddingHorizontal: 14, paddingVertical: 8,
-    borderRadius: 22, borderWidth: 1.5,
-    marginBottom: 22,
+  // Role tabs — Patient / Doctor
+  tabBar: {
+    flexDirection: "row", gap: 4,
+    borderRadius: 14, borderWidth: 1.5,
+    padding: 4, marginBottom: 22,
   },
-  chipText: { fontSize: 11, fontWeight: "800", letterSpacing: 1.1 },
+  tabIndicator: {
+    position: "absolute",
+    top: 4, bottom: 4, left: 4,
+    borderRadius: 10,
+  },
+  tabBtn: {
+    flex: 1,
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    paddingVertical: 10, borderRadius: 10,
+  },
+  tabText: { fontSize: 13, fontWeight: "800", letterSpacing: 0.3 },
 
   // Label
   label: { fontSize: 13, fontWeight: "700", marginBottom: 8 },
@@ -296,11 +479,12 @@ const s = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
   },
   prefixWrap: {
-    flexDirection: "row", alignItems: "center", gap: 6,
+    flexDirection: "row", alignItems: "center", gap: 5,
     paddingHorizontal: 14,
     borderRightWidth: StyleSheet.hairlineWidth,
     height: "100%",
   },
+  flag:       { fontSize: 18 },
   prefix:     { fontSize: 15, fontWeight: "700" },
   phoneInput: { flex: 1, paddingHorizontal: 14, fontSize: 15 },
   validPill: {
@@ -332,4 +516,32 @@ const s = StyleSheet.create({
 
   // Footer note
   footNote: { fontSize: 11, textAlign: "center", marginTop: 20, paddingHorizontal: 32, lineHeight: 17 },
+
+  // Country picker modal
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)" },
+  modalSheet: {
+    position: "absolute", left: 0, right: 0, bottom: 0,
+    height: "75%",
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingTop: 10, paddingHorizontal: 20,
+  },
+  modalHandle: {
+    alignSelf: "center",
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: "#00000022", marginBottom: 14,
+  },
+  modalTitle: { fontSize: 18, fontWeight: "800", marginBottom: 14 },
+  searchRow: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    borderRadius: 12, borderWidth: 1.5,
+    paddingHorizontal: 14, height: 46, marginBottom: 10,
+  },
+  searchInput: { flex: 1, fontSize: 15 },
+  countryRow: {
+    flexDirection: "row", alignItems: "center", gap: 12,
+    paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  countryName: { flex: 1, fontSize: 15, fontWeight: "600" },
+  countryDial: { fontSize: 14, fontWeight: "700" },
+  noResults: { textAlign: "center", marginTop: 40, fontSize: 14 },
 });

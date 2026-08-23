@@ -16,6 +16,6 @@
     "**/*.tsx",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
-  ],
+, "app/(tabs)/settings.tssettings.tsxx"  ],
   "exclude": ["node_modules"]
 }

@@ -1,8 +1,11 @@
+import { DOCTOR_ACCENT } from "@/constants/theme";
+import { api } from "@/lib/api";
 import { useAuth } from "@/store/AuthContext";
 import { useTheme } from "@/theme";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   KeyboardAvoidingView,
   Platform,
@@ -14,8 +17,6 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Circle, Path } from "react-native-svg";
-
-const TEST_OTP = "123456";
 
 // ── Success overlay ───────────────────────────────────────────────────────────
 function SuccessOverlay({ visible, pink }: { visible: boolean; pink: string }) {
@@ -69,19 +70,31 @@ const so = StyleSheet.create({
   barFill:   { height: "100%", width: "100%", borderRadius: 2 },
 });
 
+type VerifyOtpResponse = {
+  success: boolean;
+  isNewUser: boolean;
+  profileCompleted: boolean;
+  approvalStatus?: string;
+  user: { _id: string; name?: string; phone: string; role: "patient" | "doctor"; isVerified: boolean };
+  accessToken: string;
+  tokenExpiresAt: number;
+  tokenExpiresIn: number;
+};
+
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function VerifyOtpScreen() {
-  const { colors }                = useTheme();
-  const { login, isProfileDone }  = useAuth();
-  const router                    = useRouter();
-  const { phone }                 = useLocalSearchParams<{ phone: string }>();
+  const { colors }  = useTheme();
+  const { login }   = useAuth();
+  const router      = useRouter();
+  const { phone, role } = useLocalSearchParams<{ phone: string; role: "patient" | "doctor" }>();
 
-  const pink     = colors.primary;
-  const pinkLite = colors.primaryLight;
+  const pink     = role === "doctor" ? DOCTOR_ACCENT : colors.primary;
+  const pinkLite = role === "doctor" ? DOCTOR_ACCENT + "1A" : colors.primaryLight;
 
   const [digits,   setDigits]   = useState(["", "", "", "", "", ""]);
-  const [status,   setStatus]   = useState<"idle" | "error" | "success">("idle");
+  const [status,   setStatus]   = useState<"idle" | "verifying" | "error" | "success">("idle");
   const [resendT,  setResendT]  = useState(30);
+  const [resending, setResending] = useState(false);
 
   // For shake animation on error
   const shakeX = useRef(new Animated.Value(0)).current;
@@ -111,7 +124,7 @@ export default function VerifyOtpScreen() {
     next[idx] = d;
     setDigits(next);
     if (status === "error") setStatus("idle");
-    if (d && idx < 5) refs[idx + 1].current?.focus();
+    if (d && idx < 5) refs[idx + 1]?.current?.focus();
   };
 
   const handleBackspace = (key: string, idx: number) => {
@@ -119,36 +132,82 @@ export default function VerifyOtpScreen() {
       const next = [...digits];
       next[idx - 1] = "";
       setDigits(next);
-      refs[idx - 1].current?.focus();
+      refs[idx - 1]?.current?.focus();
     }
   };
 
   const allFilled = digits.every(d => d !== "");
 
   const handleVerify = async () => {
-    if (!allFilled) return;
+    if (!allFilled || status === "verifying" || status === "success") return;
     const code = digits.join("");
 
-    if (code !== TEST_OTP) {
+    setStatus("verifying");
+    const result = await api<VerifyOtpResponse>("/api/auth/otp/verify", {
+      method: "POST",
+      body: { phone, code, role },
+    });
+
+    if (!result.ok) {
+      // Role/phone already registered under a different role — not a wrong-code
+      // problem, so don't shake the boxes; the code the user retries is fine.
+      if (result.status === 409) {
+        setStatus("idle");
+        Alert.alert("Account already exists", result.message, [
+          { text: "OK", onPress: () => router.replace("/login") },
+        ]);
+        return;
+      }
+
       setStatus("error");
       shake();
-      // Clear boxes after shake
       setTimeout(() => {
         setDigits(["", "", "", "", "", ""]);
-        refs[0].current?.focus();
+        setStatus("idle");
+        refs[0]?.current?.focus();
       }, 400);
       return;
     }
 
-    // ✅ Correct
+    const { accessToken, user, profileCompleted, approvalStatus } = result.data;
+
     setStatus("success");
-    await login();
+    await login({
+      accessToken,
+      role: user.role,
+      phone: user.phone,
+      profileCompleted,
+      approvalStatus,
+    });
+
     setTimeout(() => {
-      router.replace(isProfileDone ? "/(tabs)" : "/health-profile");
-    }, 2000);
+      if (user.role === "doctor") {
+        if (!profileCompleted) {
+          router.replace("/doctor-profile");
+        } else if (approvalStatus !== "approved") {
+          router.replace("/doctor-pending");
+        } else {
+          router.replace("/(doctor-tabs)/home");
+        }
+      } else {
+        router.replace(profileCompleted ? "/(tabs)" : "/health-profile");
+      }
+    }, 1500);
   };
 
-  const maskedPhone = phone ? `+44 **** ${phone.slice(-4)}` : "+44 *** ****";
+  const handleResend = async () => {
+    if (resendT > 0 || resending) return;
+    setResending(true);
+    const result = await api("/api/auth/otp/send", { method: "POST", body: { phone, role } });
+    setResending(false);
+    if (result.ok) {
+      setResendT(30);
+      setDigits(["", "", "", "", "", ""]);
+      setStatus("idle");
+    }
+  };
+
+  const maskedPhone = phone ? `${phone.slice(0, -4).replace(/\d/g, "*")}${phone.slice(-4)}` : "••• ••••";
 
   // Box border colour
   const boxBorderColor = (i: number) => {
@@ -227,7 +286,7 @@ export default function VerifyOtpScreen() {
                 textAlign="center"
                 autoFocus={i === 0}
                 selectTextOnFocus
-                editable={status !== "success"}
+                editable={status !== "success" && status !== "verifying"}
               />
             ))}
           </Animated.View>
@@ -243,7 +302,7 @@ export default function VerifyOtpScreen() {
           {/* Verify & Continue — ONLY navigates on correct code */}
           <Pressable
             onPress={handleVerify}
-            disabled={!allFilled || status === "success"}
+            disabled={!allFilled || status === "success" || status === "verifying"}
             style={[
               s.verifyBtn,
               {
@@ -251,12 +310,14 @@ export default function VerifyOtpScreen() {
                   status === "success" ? "#10b981" :
                   allFilled           ? pink        :
                                         colors.border,
-                opacity: !allFilled || status === "success" ? 0.6 : 1,
+                opacity: !allFilled || status === "success" || status === "verifying" ? 0.6 : 1,
               },
             ]}
           >
             <Text style={s.verifyBtnText}>
-              {status === "success" ? "✓  Verified!" : "Verify & Continue"}
+              {status === "success"   ? "✓  Verified!" :
+               status === "verifying" ? "Verifying…" :
+                                         "Verify & Continue"}
             </Text>
           </Pressable>
 
@@ -270,8 +331,10 @@ export default function VerifyOtpScreen() {
                 Resend in <Text style={{ fontWeight: "700" }}>{resendT}s</Text>
               </Text>
             ) : (
-              <Pressable onPress={() => { setResendT(30); setDigits(["","","","","",""]); setStatus("idle"); }}>
-                <Text style={[s.resendLink, { color: pink }]}>Resend Code</Text>
+              <Pressable onPress={handleResend} disabled={resending}>
+                <Text style={[s.resendLink, { color: pink }]}>
+                  {resending ? "Sending…" : "Resend Code"}
+                </Text>
               </Pressable>
             )}
           </View>

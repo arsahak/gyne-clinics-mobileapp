@@ -1,57 +1,88 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, ReactNode, useContext, useEffect, useState } from "react";
 
-const STORAGE_KEY_AUTH    = "@gyneclinics:logged_in";
-const STORAGE_KEY_PROFILE = "@gyneclinics:profile_done";
+const STORAGE_KEY = "@gyneclinics:session";
+
+type Role = "patient" | "doctor";
+
+type Session = {
+  accessToken: string;
+  role: Role;
+  phone: string;
+  profileCompleted: boolean;
+  approvalStatus?: string;
+};
 
 type AuthState = {
-  isLoggedIn:    boolean;
+  isLoggedIn: boolean;
   isProfileDone: boolean;
-  isLoading:     boolean;
-  login:         () => Promise<void>;
+  isLoading: boolean;
+  token: string | null;
+  role: Role | null;
+  phone: string | null;
+  approvalStatus: string | null;
+  login: (session: Session) => Promise<void>;
   completeProfile: () => Promise<void>;
-  logout:        () => Promise<void>;
+  setApprovalStatus: (status: string) => Promise<void>;
+  logout: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [isLoggedIn,    setLoggedIn]    = useState(false);
-  const [isProfileDone, setProfileDone] = useState(false);
-  const [isLoading,     setLoading]     = useState(true);
+  const [session, setSession] = useState<Session | null>(null);
+  const [isLoading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
       try {
-        const [auth, profile] = await Promise.all([
-          AsyncStorage.getItem(STORAGE_KEY_AUTH),
-          AsyncStorage.getItem(STORAGE_KEY_PROFILE),
-        ]);
-        setLoggedIn(auth === "true");
-        setProfileDone(profile === "true");
+        const raw = await AsyncStorage.getItem(STORAGE_KEY);
+        if (raw) setSession(JSON.parse(raw));
       } catch {}
       setLoading(false);
     })();
   }, []);
 
-  const login = async () => {
-    await AsyncStorage.setItem(STORAGE_KEY_AUTH, "true");
-    setLoggedIn(true);
+  const login = async (next: Session) => {
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    setSession(next);
   };
 
   const completeProfile = async () => {
-    await AsyncStorage.setItem(STORAGE_KEY_PROFILE, "true");
-    setProfileDone(true);
+    if (!session) return;
+    const next = { ...session, profileCompleted: true };
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    setSession(next);
+  };
+
+  const setApprovalStatus = async (status: string) => {
+    if (!session) return;
+    const next = { ...session, approvalStatus: status };
+    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+    setSession(next);
   };
 
   const logout = async () => {
-    await AsyncStorage.multiRemove([STORAGE_KEY_AUTH, STORAGE_KEY_PROFILE]);
-    setLoggedIn(false);
-    setProfileDone(false);
+    await AsyncStorage.removeItem(STORAGE_KEY);
+    setSession(null);
   };
 
   return (
-    <AuthContext.Provider value={{ isLoggedIn, isProfileDone, isLoading, login, completeProfile, logout }}>
+    <AuthContext.Provider
+      value={{
+        isLoggedIn: !!session,
+        isProfileDone: session?.profileCompleted ?? false,
+        isLoading,
+        token: session?.accessToken ?? null,
+        role: session?.role ?? null,
+        phone: session?.phone ?? null,
+        approvalStatus: session?.approvalStatus ?? null,
+        login,
+        completeProfile,
+        setApprovalStatus,
+        logout,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

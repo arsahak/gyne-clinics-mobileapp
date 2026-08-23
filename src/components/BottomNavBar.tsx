@@ -9,21 +9,30 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { DOCTOR_ACCENT } from "@/constants/theme";
+import { useAuth } from "@/store/AuthContext";
 import { useTheme } from "@/theme";
 import { NavIcon, NavIconName } from "./NavIcon";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const BAR_HEIGHT  = 60;
-const TAB_COUNT   = 5;
 const LINE_WIDTH  = 28;
 const LINE_HEIGHT = 3;
 
+// Route names are unique per tab group, so both the patient and doctor tab
+// bars can share this one lookup without colliding.
 const TAB_META: Record<string, { icon: NavIconName; label: string }> = {
+  // Patient tabs
   index:    { icon: "home",     label: "Home"     },
   learn:    { icon: "learn",    label: "Learn"    },
   help:     { icon: "help",     label: "Help"     },
-  chat:     { icon: "chat",     label: "Chat"     },
+  insights: { icon: "insights", label: "Insights" },
   settings: { icon: "settings", label: "Settings" },
+  // Doctor tabs
+  home:         { icon: "home",         label: "Home"     },
+  chat:         { icon: "chat",         label: "Chat"     },
+  patients:     { icon: "patients",     label: "Patients" },
+  availability: { icon: "availability", label: "Schedule" },
 };
 
 // ── Single tab item ───────────────────────────────────────────────────────────
@@ -87,12 +96,16 @@ function TabItem({ icon, label, isActive, activeColor, inactiveColor, onPress }:
 // ── Bar ───────────────────────────────────────────────────────────────────────
 export function BottomNavBar({ state, navigation }: BottomTabBarProps) {
   const { colors } = useTheme();
+  const { role }    = useAuth();
   const insets      = useSafeAreaInsets();
-  const ACTIVE_COLOR = colors.primary; // brand teal, adapts light/dark
+  // Doctor accounts use the teal doctor accent everywhere, including their own tab bar.
+  const ACTIVE_COLOR = role === "doctor" ? DOCTOR_ACCENT : colors.primary;
 
-  // Sliding indicator — moves to the active tab
+  // Sliding indicator — moves to the active tab. Tab count can vary between
+  // the patient and doctor tab bars, so it's derived from the route list.
+  const tabCount     = state.routes.length;
   const screenWidth = Dimensions.get("window").width;
-  const tabWidth    = screenWidth / TAB_COUNT;
+  const tabWidth    = screenWidth / tabCount;
   const slideX      = useRef(new Animated.Value(state.index * tabWidth)).current;
 
   useEffect(() => {

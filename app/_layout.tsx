@@ -64,12 +64,21 @@ function RootStack() {
           animation:         "slide_from_right",
         }}
       >
-        <Stack.Screen name="index"          options={{ headerShown: false }} />
-        <Stack.Screen name="login"          options={{ headerShown: false }} />
-        <Stack.Screen name="verify-otp"     options={{ headerShown: false }} />
-        <Stack.Screen name="health-profile" options={{ headerShown: false }} />
-        <Stack.Screen name="(tabs)"         options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found"     options={{ title: "Not found" }} />
+        <Stack.Screen name="index"           options={{ headerShown: false }} />
+        <Stack.Screen name="login"           options={{ headerShown: false }} />
+        <Stack.Screen name="verify-otp"      options={{ headerShown: false }} />
+        <Stack.Screen name="health-profile"  options={{ headerShown: false }} />
+        <Stack.Screen name="edit-patient-profile" options={{ headerShown: false }} />
+        <Stack.Screen name="edit-doctor-profile" options={{ headerShown: false }} />
+        <Stack.Screen name="doctor-profile"  options={{ headerShown: false }} />
+        <Stack.Screen name="doctor-pending"  options={{ headerShown: false }} />
+        <Stack.Screen name="content/[id]"    options={{ headerShown: false }} />
+        <Stack.Screen name="doctor/[id]"     options={{ headerShown: false }} />
+        <Stack.Screen name="consultation/[chatId]" options={{ headerShown: false }} />
+        <Stack.Screen name="consultations"   options={{ headerShown: false }} />
+        <Stack.Screen name="(tabs)"          options={{ headerShown: false }} />
+        <Stack.Screen name="(doctor-tabs)"   options={{ headerShown: false }} />
+        <Stack.Screen name="+not-found"      options={{ title: "Not found" }} />
       </Stack>
     </>
   );

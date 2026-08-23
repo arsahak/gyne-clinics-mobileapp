@@ -1,3 +1,4 @@
+export * from "./AdBanner";
 export * from "./AppSplashScreen";
 export * from "./BottomNavBar";
 export * from "./Button";
