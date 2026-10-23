@@ -7,7 +7,7 @@ export const config = {
     process.env.EXPO_PUBLIC_API_URL ||
     (typeof extra.apiUrl === "string" ? extra.apiUrl : "http://localhost:8000"),
   // The webapp, for pages the app links out to (terms, privacy).
-  webUrl: process.env.EXPO_PUBLIC_WEB_URL || "https://www.gyneclinics.com",
+  webUrl: process.env.EXPO_PUBLIC_WEB_URL || "https://app.gyneclinics.com",
   appVersion: Constants.expoConfig?.version ?? "1.0.0",
   isProd: !__DEV__,
 } as const;
