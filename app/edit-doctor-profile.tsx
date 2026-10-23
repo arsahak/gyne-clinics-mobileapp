@@ -1,5 +1,6 @@
-import { DOCTOR_ACCENT } from "@/constants/theme";
-import { api, uploadImage } from "@/lib/api";
+import { DOCTOR_ACCENT } from "@/constants/brand";
+import { getMyDoctorProfile, type MyDoctorChanges, type MyDoctorProfile, updateMyDoctorProfile } from "@/lib/services/doctors";
+import { uploadAvatar } from "@/lib/services/patient";
 import { useAuth } from "@/store/AuthContext";
 import { useTheme } from "@/theme";
 import * as ImagePicker from "expo-image-picker";
@@ -21,16 +22,19 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-type DoctorProfile = {
-  qualifications?: string[];
-  specialization?: string;
-  experienceYears?: number;
-  registrationNumber?: string;
-  hospitalName?: string;
-  hospitalAddress?: string;
-  languages?: string[];
-  account?: { name?: string; avatar?: string };
-};
+// Same choices as the webapp and the backend.
+const SPECIALIZATIONS = [
+  "General Gynaecology",
+  "Reproductive Medicine",
+  "Urogynaecology & Pelvic Health",
+  "Menopause & HRT",
+  "Pregnancy Care",
+  "Adolescent Gynaecology",
+  "Intimate Wellness",
+];
+
+const splitList = (value: string) => value.split(",").map((item) => item.trim()).filter(Boolean);
+const sameList = (a: string[], b: string[]) => a.join("|") === b.join("|");
 
 function initials(name?: string) {
   if (!name?.trim()) return "DR";
@@ -39,7 +43,7 @@ function initials(name?: string) {
 
 export default function EditDoctorProfileScreen() {
   const { colors } = useTheme();
-  const { token } = useAuth();
+  const { refresh } = useAuth();
   const router = useRouter();
   const accent = DOCTOR_ACCENT;
   const accentBg = `${DOCTOR_ACCENT}18`;
@@ -57,56 +61,56 @@ export default function EditDoctorProfileScreen() {
   const [hospitalName, setHospitalName] = useState("");
   const [hospitalAddress, setHospitalAddress] = useState("");
   const [languages, setLanguages] = useState("");
+  const [title, setTitle] = useState("");
+  const [registrationBody, setRegistrationBody] = useState("");
+  const [about, setAbout] = useState("");
+  const [original, setOriginal] = useState<MyDoctorProfile | null>(null);
 
   useEffect(() => {
     let active = true;
     (async () => {
-      const result = await api<{ success: boolean; data: DoctorProfile }>("/api/doctors/me", { token: token ?? undefined });
+      const result = await getMyDoctorProfile();
       if (!active) return;
       if (!result.ok) {
         setLoading(false);
         Alert.alert("Couldn’t load profile", result.message, [{ text: "Go back", onPress: () => router.back() }]);
         return;
       }
-      const profile = result.data.data;
-      setName(profile.account?.name ?? "");
-      setAvatar(profile.account?.avatar ?? null);
-      setQualifications(profile.qualifications?.join(", ") ?? "");
-      setSpecialization(profile.specialization ?? "");
-      setExperienceYears(profile.experienceYears?.toString() ?? "");
-      setRegistrationNumber(profile.registrationNumber ?? "");
-      setHospitalName(profile.hospitalName ?? "");
-      setHospitalAddress(profile.hospitalAddress ?? "");
-      setLanguages(profile.languages?.join(", ") ?? "");
+      // Pending changes (waiting for an admin) are what the doctor edits.
+      const p = { ...result.data, ...(result.data.pendingUpdate?.fields ?? {}) };
+      setOriginal(p);
+      setName(p.fullName);
+      setAvatar(result.data.pendingUpdate?.avatar ?? (result.data.avatar || null));
+      setTitle(p.title);
+      setQualifications(p.qualifications.join(", "));
+      setSpecialization(p.specialization);
+      setExperienceYears(String(p.experienceYears));
+      setRegistrationNumber(p.registrationNumber);
+      setRegistrationBody(p.registrationBody);
+      setHospitalName(p.clinic);
+      setHospitalAddress(p.city);
+      setLanguages(p.languages.join(", "));
+      setAbout(p.about);
       setLoading(false);
     })();
     return () => { active = false; };
-  }, [router, token]);
+  }, [router]);
 
   const saveProfilePhoto = async (localUri: string) => {
     setLocalAvatar(localUri);
     setAvatarFailed(false);
     setUploadingAvatar(true);
-    const uploaded = await uploadImage(localUri, token ?? undefined);
+    const uploaded = await uploadAvatar(localUri);
+    setUploadingAvatar(false);
     if (!uploaded.ok) {
-      setUploadingAvatar(false);
       setLocalAvatar(null);
       Alert.alert("Couldn’t upload photo", uploaded.message);
       return;
     }
-    const saved = await api<{ success: boolean; data: DoctorProfile }>("/api/doctors/me", {
-      method: "PUT",
-      token: token ?? undefined,
-      body: { avatar: uploaded.data.url },
-    });
-    setUploadingAvatar(false);
-    if (!saved.ok) {
-      setLocalAvatar(null);
-      Alert.alert("Couldn’t save photo", saved.message);
-      return;
-    }
-    setAvatar(saved.data.data.account?.avatar ?? uploaded.data.url);
+    setAvatar(uploaded.data.avatar || localUri);
     setLocalAvatar(null);
+    void refresh();
+    if (uploaded.data.inReview) Alert.alert("Photo sent for review", "Patients will see your new photo once an admin approves it.");
   };
 
   const openPhotoLibrary = async () => {
@@ -132,32 +136,53 @@ export default function EditDoctorProfileScreen() {
     ]);
   };
 
+  // Only the changed fields are sent; for an approved doctor most wait for an admin.
   const save = async () => {
+    if (!original) return;
     const experience = Number(experienceYears);
     if (name.trim().length < 2) return Alert.alert("Check your name", "Please enter at least 2 characters.");
-    if (!qualifications.trim()) return Alert.alert("Qualifications required", "Add at least one professional qualification.");
-    if (!specialization.trim()) return Alert.alert("Specialization required", "Add your medical specialization.");
-    if (!Number.isFinite(experience) || experience < 0 || experience > 80) return Alert.alert("Check experience", "Enter experience between 0 and 80 years.");
-    if (!registrationNumber.trim()) return Alert.alert("Registration required", "Add your medical registration number.");
+    if (title.trim().length < 2) return Alert.alert("Job title required", "Add your job title, e.g. Consultant Gynaecologist.");
+    if (!splitList(qualifications).length) return Alert.alert("Qualifications required", "Add at least one professional qualification.");
+    if (!SPECIALIZATIONS.includes(specialization)) return Alert.alert("Specialization required", "Choose your specialization.");
+    if (!Number.isFinite(experience) || experience < 0 || experience > 70) return Alert.alert("Check experience", "Enter experience between 0 and 70 years.");
+    if (registrationNumber.trim().length < 3) return Alert.alert("Registration required", "Add your medical registration number.");
+    if (registrationBody.trim().length < 2) return Alert.alert("Registration body required", "Add the body you're registered with, e.g. GMC.");
+    if (hospitalAddress.trim().length < 2) return Alert.alert("City required", "Add the city you practise in.");
+    if (!splitList(languages).length) return Alert.alert("Languages required", "Add at least one language.");
+
+    const next = {
+      fullName: name.trim(),
+      title: title.trim(),
+      qualifications: splitList(qualifications),
+      specialization,
+      experienceYears: experience,
+      registrationNumber: registrationNumber.trim(),
+      registrationBody: registrationBody.trim(),
+      clinic: hospitalName.trim(),
+      city: hospitalAddress.trim(),
+      languages: splitList(languages),
+      about: about.trim(),
+    };
+    const changes: MyDoctorChanges = {};
+    for (const key of Object.keys(next) as (keyof typeof next)[]) {
+      const value = next[key];
+      const before = original[key];
+      const changed = Array.isArray(value) ? !sameList(value, before as string[]) : value !== before;
+      if (changed) (changes as Record<string, unknown>)[key] = value;
+    }
+    if (!Object.keys(changes).length) return router.back();
 
     setSaving(true);
-    const result = await api("/api/doctors/me", {
-      method: "PUT",
-      token: token ?? undefined,
-      body: {
-        name: name.trim(),
-        qualifications: qualifications.split(",").map((item) => item.trim()).filter(Boolean),
-        specialization: specialization.trim(),
-        experienceYears: experience,
-        registrationNumber: registrationNumber.trim(),
-        hospitalName: hospitalName.trim(),
-        hospitalAddress: hospitalAddress.trim(),
-        languages: languages.split(",").map((item) => item.trim()).filter(Boolean),
-      },
-    });
+    const result = await updateMyDoctorProfile(changes);
     setSaving(false);
     if (!result.ok) return Alert.alert("Couldn’t save profile", result.message);
-    Alert.alert("Profile updated", "Your professional details have been saved.", [{ text: "Done", onPress: () => router.back() }]);
+    await refresh();
+    const note = result.data.reverification
+      ? "Your profile was sent back for verification."
+      : result.data.inReview
+        ? result.message || "Patients will see your changes once an admin approves them."
+        : "Your professional details have been saved.";
+    Alert.alert("Profile updated", note, [{ text: "Done", onPress: () => router.back() }]);
   };
 
   return (
@@ -188,15 +213,28 @@ export default function EditDoctorProfileScreen() {
 
             <Text style={[s.section, { color: colors.textMuted }]}>PROFESSIONAL DETAILS</Text>
             <Field label="Full name" value={name} onChangeText={setName} placeholder="Dr. Sarah Miller" colors={colors} accent={accent} />
+            <Field label="Job title" value={title} onChangeText={setTitle} placeholder="Consultant Gynaecologist" colors={colors} accent={accent} />
+            <Text style={[s.label, { color: colors.text }]}>Specialization</Text>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+              {SPECIALIZATIONS.map((option) => {
+                const on = option === specialization;
+                return (
+                  <Pressable key={option} onPress={() => setSpecialization(option)} style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1.5, borderColor: on ? accent : colors.border, backgroundColor: on ? accentBg : colors.surface }}>
+                    <Text style={{ fontSize: 13, fontWeight: on ? "700" : "500", color: on ? accent : colors.text }}>{option}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
             <Field label="Qualifications" value={qualifications} onChangeText={setQualifications} placeholder="MBBS, MD (Gynecology)" hint="Separate multiple qualifications with commas" colors={colors} accent={accent} />
-            <Field label="Specialization" value={specialization} onChangeText={setSpecialization} placeholder="Gynecology & Obstetrics" colors={colors} accent={accent} />
             <Field label="Experience (years)" value={experienceYears} onChangeText={setExperienceYears} placeholder="8" numeric colors={colors} accent={accent} />
             <Field label="Registration number" value={registrationNumber} onChangeText={setRegistrationNumber} placeholder="BMDC-A-12345" colors={colors} accent={accent} />
+            <Field label="Registration body" value={registrationBody} onChangeText={setRegistrationBody} placeholder="GMC, BMDC" hint="Registration changes are always checked by an admin" colors={colors} accent={accent} />
 
             <Text style={[s.section, { color: colors.textMuted }]}>PRACTICE INFORMATION</Text>
             <Field label="Hospital or clinic" value={hospitalName} onChangeText={setHospitalName} placeholder="Hospital or clinic name" colors={colors} accent={accent} />
-            <Field label="Practice address" value={hospitalAddress} onChangeText={setHospitalAddress} placeholder="Full practice address" colors={colors} accent={accent} multiline />
+            <Field label="City" value={hospitalAddress} onChangeText={setHospitalAddress} placeholder="London" colors={colors} accent={accent} />
             <Field label="Languages" value={languages} onChangeText={setLanguages} placeholder="Bangla, English" hint="Separate multiple languages with commas" colors={colors} accent={accent} />
+            <Field label="About you" value={about} onChangeText={setAbout} placeholder="A short introduction patients see on your profile" colors={colors} accent={accent} multiline />
 
             <Pressable onPress={save} disabled={saving || uploadingAvatar} style={[s.saveButton, { backgroundColor: accent, opacity: saving || uploadingAvatar ? 0.65 : 1 }]}>
               {saving ? <ActivityIndicator color="#fff" /> : <><Save size={18} color="#fff" /><Text style={s.saveText}>Save changes</Text></>}

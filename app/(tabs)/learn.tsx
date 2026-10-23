@@ -1,6 +1,7 @@
 import { AdBanner } from "@/components";
-import { api, uploadImage } from "@/lib/api";
-import { useAuth } from "@/store/AuthContext";
+import { CATEGORIES, getContentArticles, getMyStories, getStoryFeed, submitStory } from "@/lib/services/content";
+import { getBookmarks, setBookmark } from "@/lib/services/patient";
+import type { Article, ArticleCategory, SubmittedStory } from "@/lib/types";
 import { useTheme } from "@/theme";
 import { useFocusEffect, useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
@@ -44,6 +45,41 @@ type Story = {
   createdAt: string;
 };
 type Bookmark = { bookmarkId: string; targetType: "content" | "story"; item: Content | Story };
+
+// The backend's Learn data in the shapes this screen draws. Articles are
+// opened and saved by their slug; stories by "community-<id>".
+const FORMAT_MAP: Record<Article["format"], Content["format"]> = { guide: "text", story: "text", blog: "blog", image: "image" };
+
+const toContent = (a: Article): Content => ({
+  _id: a.slug,
+  title: a.title,
+  body: a.excerpt,
+  format: FORMAT_MAP[a.format] ?? "text",
+  imageUrl: a.image,
+  category: a.category,
+  readTimeMinutes: a.readMinutes,
+  createdAt: a.publishedAt,
+  sponsored: Boolean(a.sponsor),
+  sponsorName: a.sponsor,
+});
+
+const toStory = (st: SubmittedStory): Story => ({
+  _id: st._id,
+  title: st.title,
+  body: st.body ?? "",
+  imageUrl: st.imageUrl,
+  author: { _id: "", name: st.anonymous ? "Anonymous" : st.authorName || undefined },
+  status: st.status === "hidden" ? "rejected" : st.status,
+  createdAt: st.publishedAt ?? st.createdAt,
+});
+
+const STORY_PREFIX = "community-";
+const slugFor = (targetType: "content" | "story", id: string) => (targetType === "story" ? `${STORY_PREFIX}${id}` : id);
+/** The id the screen uses for a saved slug (articles: the slug, stories: the story id). */
+const idForSlug = (slug: string) => (slug.startsWith(STORY_PREFIX) ? slug.slice(STORY_PREFIX.length) : slug);
+
+// Topics a story can be shared under (same list as the webapp and backend).
+const STORY_TOPICS: ArticleCategory[] = CATEGORIES;
 
 const FORMAT_EMOJI: Record<Content["format"], string> = { text: "📄", image: "🖼️", blog: "📝" };
 
@@ -321,7 +357,6 @@ function LearnSkeleton({
 // ── Screen ───────────────────────────────────────────────────────────────────
 export default function LearnScreen() {
   const { colors } = useTheme();
-  const { token } = useAuth();
   const router = useRouter();
   const accent = colors.primary;
   const accentBg = colors.primaryLight;
@@ -346,8 +381,10 @@ export default function LearnScreen() {
   const [shareTitle, setShareTitle] = useState("");
   const [shareBody, setShareBody] = useState("");
   const [shareImageLocalUri, setShareImageLocalUri] = useState<string | null>(null);
-  const [shareImageUrl, setShareImageUrl] = useState<string | null>(null);
-  const [uploadingShareImage, setUploadingShareImage] = useState(false);
+  const [shareTopic, setShareTopic] = useState<ArticleCategory | null>(null);
+  const [shareAnonymous, setShareAnonymous] = useState(false);
+  // The photo goes up with the story itself, so there's nothing to wait for before submitting.
+  const uploadingShareImage = false;
   const [sharing, setSharing] = useState(false);
 
   const [storyViewerOpen, setStoryViewerOpen] = useState(false);
@@ -371,13 +408,9 @@ export default function LearnScreen() {
   }, [stories.length]);
 
   const loadData = useCallback(async () => {
-    const [articlesRes, storiesRes, bookmarksRes] = await Promise.all([
-      api<{ success: boolean; data: Content[] }>("/api/content", { token: token ?? undefined }),
-      api<{ success: boolean; data: Story[] }>("/api/stories/published", { token: token ?? undefined }),
-      api<{ success: boolean; data: Bookmark[] }>("/api/patients/bookmarks", { token: token ?? undefined }),
-    ]);
+    const [articlesRes, storyList, bookmarksRes] = await Promise.all([getContentArticles(), getStoryFeed(), getBookmarks()]);
     if (articlesRes.ok) {
-      const nextArticles = articlesRes.data.data;
+      const nextArticles = articlesRes.data.filter((a) => a.format !== "story").map(toContent);
       setArticles(nextArticles);
       setActiveFilter((current) =>
         current === "All Topics" || nextArticles.some((article) => article.category?.trim() === current)
@@ -385,11 +418,9 @@ export default function LearnScreen() {
           : "All Topics",
       );
     }
-    if (storiesRes.ok) setStories(storiesRes.data.data);
-    if (bookmarksRes.ok) {
-      setBookmarkedIds(new Set(bookmarksRes.data.data.map((b) => b.item._id)));
-    }
-  }, [token]);
+    setStories(storyList.map(toStory));
+    if (bookmarksRes.ok) setBookmarkedIds(new Set(bookmarksRes.data.map(idForSlug)));
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -410,9 +441,7 @@ export default function LearnScreen() {
       return next;
     });
 
-    const result = isSaved
-      ? await api("/api/patients/bookmarks", { method: "DELETE", token: token ?? undefined, body: { targetType, targetId: id } })
-      : await api("/api/patients/bookmarks", { method: "POST", token: token ?? undefined, body: { targetType, targetId: id } });
+    const result = await setBookmark(slugFor(targetType, id), !isSaved);
 
     if (!result.ok) {
       setBookmarkedIds((prev) => {
@@ -421,21 +450,36 @@ export default function LearnScreen() {
         return next;
       });
       Alert.alert("Couldn't update bookmark", result.message);
+      return;
     }
+    // The backend's list is the truth (also changed from the webapp).
+    setBookmarkedIds(new Set(result.data.map(idForSlug)));
   };
 
+  // Saved articles and stories, newest saved first.
   const openSaved = async () => {
     setSavedOpen(true);
     setSavedLoading(true);
-    const result = await api<{ success: boolean; data: Bookmark[] }>("/api/patients/bookmarks", { token: token ?? undefined });
+    const result = await getBookmarks();
     setSavedLoading(false);
-    if (result.ok) setSavedItems(result.data.data);
+    if (!result.ok) return;
+    const items: Bookmark[] = [];
+    for (const slug of result.data) {
+      const id = idForSlug(slug);
+      if (slug.startsWith(STORY_PREFIX)) {
+        const story = stories.find((st) => st._id === id);
+        if (story) items.push({ bookmarkId: slug, targetType: "story", item: story });
+      } else {
+        const article = articles.find((a) => a._id === id);
+        if (article) items.push({ bookmarkId: slug, targetType: "content", item: article });
+      }
+    }
+    setSavedItems(items);
   };
 
   const openMyStories = async () => {
     setMineOpen(true);
-    const result = await api<{ success: boolean; data: Story[] }>("/api/stories/mine", { token: token ?? undefined });
-    if (result.ok) setMyStories(result.data.data);
+    setMyStories((await getMyStories()).map(toStory));
   };
 
   const pickShareImage = async () => {
@@ -453,34 +497,24 @@ export default function LearnScreen() {
     });
     if (result.canceled || !result.assets[0]) return;
 
-    // Show the picked photo right away so there's no dead time waiting on the network.
     setShareImageLocalUri(result.assets[0].uri);
-    setShareImageUrl(null);
-    setUploadingShareImage(true);
-
-    const uploadResult = await uploadImage(result.assets[0].uri, token ?? undefined);
-    setUploadingShareImage(false);
-
-    if (!uploadResult.ok) {
-      Alert.alert("Couldn't upload image", uploadResult.message);
-      setShareImageLocalUri(null);
-      return;
-    }
-    setShareImageUrl(uploadResult.data.url);
   };
 
   const removeShareImage = () => {
     setShareImageLocalUri(null);
-    setShareImageUrl(null);
   };
 
+  const storyReady = shareTitle.trim().length >= 5 && shareBody.trim().length > 0 && shareTopic !== null;
+
   const handleSubmitStory = async () => {
-    if (!shareTitle.trim() || !shareBody.trim() || sharing || uploadingShareImage) return;
+    if (!storyReady || sharing) return;
     setSharing(true);
-    const result = await api("/api/stories", {
-      method: "POST",
-      token: token ?? undefined,
-      body: { title: shareTitle.trim(), body: shareBody.trim(), imageUrl: shareImageUrl || undefined },
+    const result = await submitStory({
+      title: shareTitle,
+      body: shareBody,
+      topic: shareTopic!,
+      anonymous: shareAnonymous,
+      imageUri: shareImageLocalUri,
     });
     setSharing(false);
 
@@ -491,8 +525,9 @@ export default function LearnScreen() {
 
     setShareTitle("");
     setShareBody("");
+    setShareTopic(null);
+    setShareAnonymous(false);
     setShareImageLocalUri(null);
-    setShareImageUrl(null);
     setShareOpen(false);
     Alert.alert("Submitted!", "Your story is pending admin approval before it's published.");
   };
@@ -694,7 +729,7 @@ export default function LearnScreen() {
         </View>
 
         <View style={s.padH}>
-          <AdBanner placement="learn_feed" carousel />
+          <AdBanner placement="learn-feed" />
 
           {!visibleArticles.length ? (
             <Text style={{ color: colors.textMuted, fontSize: 13, textAlign: "center", paddingVertical: 20 }}>
@@ -823,10 +858,24 @@ export default function LearnScreen() {
           <Text style={{ color: colors.textMuted, fontSize: 12, textAlign: "center", marginBottom: 16 }}>
             Your story will be reviewed by our team before it's published.
           </Text>
+          <View style={m.topicRow}>
+            {STORY_TOPICS.map((topic) => {
+              const on = shareTopic === topic;
+              return (
+                <Pressable
+                  key={topic}
+                  onPress={() => setShareTopic(topic)}
+                  style={[m.topicChip, { borderColor: on ? accent : colors.border, backgroundColor: on ? accentBg : colors.background }]}
+                >
+                  <Text style={{ fontSize: 12, fontWeight: on ? "700" : "500", color: on ? accent : colors.text }}>{topic}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
           <TextInput
             value={shareTitle}
             onChangeText={setShareTitle}
-            placeholder="Title"
+            placeholder="Title (at least 5 characters)"
             placeholderTextColor={colors.textMuted}
             style={[m.input, { color: colors.text, backgroundColor: colors.background, borderColor: colors.border }]}
           />
@@ -862,10 +911,17 @@ export default function LearnScreen() {
             </Pressable>
           )}
 
+          <Pressable onPress={() => setShareAnonymous((v) => !v)} style={m.anonRow} accessibilityRole="checkbox" accessibilityState={{ checked: shareAnonymous }}>
+            <View style={[m.anonBox, { borderColor: shareAnonymous ? accent : colors.border, backgroundColor: shareAnonymous ? accent : "transparent" }]}>
+              {shareAnonymous && <Text style={{ color: "#fff", fontSize: 11, fontWeight: "900" }}>✓</Text>}
+            </View>
+            <Text style={{ color: colors.text, fontSize: 13 }}>Post anonymously</Text>
+          </Pressable>
+
           <Pressable
             onPress={handleSubmitStory}
-            disabled={!shareTitle.trim() || !shareBody.trim() || sharing || uploadingShareImage}
-            style={[m.saveBtn, { backgroundColor: accent, opacity: !shareTitle.trim() || !shareBody.trim() || sharing || uploadingShareImage ? 0.6 : 1 }]}
+            disabled={!storyReady || sharing}
+            style={[m.saveBtn, { backgroundColor: accent, opacity: !storyReady || sharing ? 0.6 : 1 }]}
           >
             {sharing ? <ActivityIndicator color="#fff" /> : <Text style={m.saveBtnText}>Submit for Review</Text>}
           </Pressable>
@@ -964,6 +1020,10 @@ const s = StyleSheet.create({
 });
 
 const m = StyleSheet.create({
+  topicRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 },
+  topicChip: { paddingHorizontal: 11, paddingVertical: 6, borderRadius: 999, borderWidth: 1.5 },
+  anonRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 },
+  anonBox: { width: 20, height: 20, borderRadius: 6, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)" },
   sheet: { position: "absolute", left: 0, right: 0, bottom: 0, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 36 },
   handle: { width: 40, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 16 },

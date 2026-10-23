@@ -1,11 +1,22 @@
 import { AdBanner } from "@/components";
-import { api } from "@/lib/api";
+import { CycleRing } from "@/components/home/CycleRing";
+import { DoctorCard } from "@/components/doctors";
+import type { Account } from "@/lib/account";
+import { cycleStats, phaseForDay, predict, sortByStart } from "@/lib/cycle";
+import { STATE_LABEL } from "@/lib/consultation";
+import { getContentArticles } from "@/lib/services/content";
+import { getDoctors } from "@/lib/services/doctors";
+import type { Article, Doctor } from "@/lib/types";
+import { useMyConsultations } from "@/lib/useMyConsultations";
+import { addPeriod, deletePeriod, getTracker, saveReminders, updatePeriod } from "@/lib/services/patient";
+import type { TrackerData } from "@/lib/tracker";
 import { useAuth } from "@/store/AuthContext";
+import { addDays, differenceInCalendarDays, format, parseISO } from "date-fns";
 import { useTheme } from "@/theme";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { LinearGradient } from "expo-linear-gradient";
-import { useFocusEffect } from "expo-router";
-import { Bell, CalendarDays, Check, Plus, Pencil } from "lucide-react-native";
+import { useFocusEffect, useRouter } from "expo-router";
+import { ArrowRight, Baby, Bell, BellRing, CalendarCheck, CalendarDays, ChartSpline, Check, Clock, Droplet, MessageCircle, Plus, Pencil, Scale, Sparkles, Timer } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -22,7 +33,6 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Svg, { Path } from "react-native-svg";
 
 // ─── types ──────────────────────────────────────────────────────────────────
 
@@ -50,6 +60,50 @@ type DashboardSummary = {
 };
 
 // ─── helpers ────────────────────────────────────────────────────────────────
+
+/** Logged periods in the shape this screen draws ("yyyy-MM-dd" days as local dates). */
+const toEntry = (p: TrackerData["periods"][number]): PeriodEntry => ({
+  _id: p.id,
+  startDate: parseISO(p.start).toISOString(),
+  endDate: p.end ? parseISO(p.end).toISOString() : null,
+});
+
+/**
+ * The cycle summary, worked out on the phone from the logged periods with the
+ * same rules as the webapp (lib/cycle.ts).
+ */
+function buildSummary(tracker: TrackerData, account: Account | null, today: Date): DashboardSummary {
+  const patient = account?.patient;
+  const stats = cycleStats(tracker.periods, patient?.typicalCycleLength, patient?.typicalPeriodLength);
+  const prediction = predict(tracker.periods, startOfDay(today), stats);
+  const latest = sortByStart(tracker.periods).at(-1);
+  const reminders = tracker.reminders;
+  const reminderDate = prediction && reminders.periodReminder ? addDays(prediction.nextStart, -reminders.daysBefore) : null;
+  return {
+    name: account?.fullName || null,
+    avatar: account?.avatar || null,
+    today: today.toISOString(),
+    latestEntry: latest ? toEntry(latest) : null,
+    currentCycleDay: prediction?.cycleDay ?? null,
+    avgCycleLengthDays: stats.averageCycle,
+    avgPeriodLengthDays: stats.averagePeriod,
+    predictedNextStart: prediction ? prediction.nextStart.toISOString() : null,
+    predictedNextEnd: prediction ? addDays(prediction.nextStart, stats.averagePeriod - 1).toISOString() : null,
+    daysUntilNextPeriod: prediction?.daysUntilNext ?? null,
+    nextReminderDate: reminderDate && reminderDate >= startOfDay(today) ? reminderDate.toISOString() : null,
+    reminderMissed: (prediction?.daysLate ?? 0) > 0,
+    remindersEnabled: reminders.periodReminder,
+    recentEntries: sortByStart(tracker.periods).reverse().slice(0, 5).map(toEntry),
+  };
+}
+
+// What each phase usually means (same copy as the webapp's home).
+const PHASE_COPY: Record<string, { color: string; text: string }> = {
+  Menstrual: { color: "#d13a8b", text: "Rest and stay hydrated. Gentle movement can ease cramps." },
+  Follicular: { color: "#217580", text: "Energy often rises in this phase — a good time for new routines." },
+  Ovulation: { color: "#834d8b", text: "You're around your estimated ovulation day." },
+  Luteal: { color: "#b08d48", text: "Some people notice bloating or mood changes before their period." },
+};
 
 const DAYS = ["S", "M", "T", "W", "T", "F", "S"];
 const MONTHS = [
@@ -253,7 +307,7 @@ function HomeSkeleton({ colors }: { colors: ReturnType<typeof useTheme>["colors"
 
 export default function HomeScreen() {
   const { colors } = useTheme();
-  const { token } = useAuth();
+  const { account } = useAuth();
 
   const today = new Date();
   const [calMonth, setCalMonth] = useState(today.getMonth());
@@ -261,8 +315,9 @@ export default function HomeScreen() {
 
   const [loading, setLoading]   = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [summary, setSummary]   = useState<DashboardSummary | null>(null);
-  const [entries, setEntries]   = useState<PeriodEntry[]>([]);
+  const [tracker, setTracker]   = useState<TrackerData | null>(null);
+  const summary = tracker ? buildSummary(tracker, account, today) : null;
+  const entries = tracker ? tracker.periods.map(toEntry) : [];
 
   const [modalOpen, setModalOpen]     = useState(false);
   const [editingId, setEditingId]     = useState<string | null>(null);
@@ -272,21 +327,28 @@ export default function HomeScreen() {
   const [savingReminders, setSavingReminders] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
   const hasLoaded = useRef(false);
+  const router = useRouter();
+  const scrollRef = useRef<ScrollView>(null);
+  const [calendarY, setCalendarY] = useState(0);
+  const [articles, setArticles] = useState<Article[]>([]);
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const { consultations, byDoctor, reload: reloadConsultations } = useMyConsultations();
 
   const accent   = colors.primary;
   const accentBg = colors.primaryLight;
 
   const loadData = useCallback(async () => {
-    const [summaryRes, entriesRes] = await Promise.all([
-      api<{ success: boolean; data: DashboardSummary }>("/api/patients/dashboard", { token: token ?? undefined }),
-      api<{ success: boolean; data: PeriodEntry[] }>("/api/patients/periods", { token: token ?? undefined }),
-    ]);
-    if (summaryRes.ok) {
-      setSummary(summaryRes.data.data);
+    const [result, articleRes, doctorRes] = await Promise.all([getTracker(), getContentArticles(), getDoctors()]);
+    if (result.ok) {
+      setTracker(result.data);
       setAvatarFailed(false);
     }
-    if (entriesRes.ok) setEntries(entriesRes.data.data);
-  }, [token]);
+    if (articleRes.ok) setArticles(articleRes.data.filter((a) => a.format !== "story").slice(0, 3));
+    if (doctorRes.ok) {
+      const recommended = doctorRes.data.filter((d) => d.recommended);
+      setDoctors((recommended.length ? recommended : [...doctorRes.data].sort((a, b) => b.rating - a.rating)).slice(0, 3));
+    }
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -307,7 +369,7 @@ export default function HomeScreen() {
 
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadData();
+    await Promise.all([loadData(), reloadConsultations()]);
     setRefreshing(false);
   };
 
@@ -352,14 +414,14 @@ export default function HomeScreen() {
     if (!formStart || saving) return;
     setSaving(true);
 
-    const body = {
-      startDate: formStart.toISOString(),
-      endDate: formEnd ? formEnd.toISOString() : undefined,
+    // Flow, symptoms and note set on the webapp are kept when the dates change here.
+    const existing = editingId ? tracker?.periods.find((p) => p.id === editingId) : undefined;
+    const entry = {
+      ...(existing && { flow: existing.flow, symptoms: existing.symptoms, note: existing.note }),
+      start: format(formStart, "yyyy-MM-dd"),
+      end: formEnd ? format(formEnd, "yyyy-MM-dd") : undefined,
     };
-
-    const result = editingId
-      ? await api(`/api/patients/periods/${editingId}`, { method: "PUT", token: token ?? undefined, body })
-      : await api("/api/patients/periods", { method: "POST", token: token ?? undefined, body });
+    const result = editingId ? await updatePeriod(editingId, entry) : await addPeriod(entry);
 
     setSaving(false);
 
@@ -379,7 +441,7 @@ export default function HomeScreen() {
       {
         text: "Delete", style: "destructive", onPress: async () => {
           setSaving(true);
-          const result = await api(`/api/patients/periods/${editingId}`, { method: "DELETE", token: token ?? undefined });
+          const result = await deletePeriod(editingId);
           setSaving(false);
           if (!result.ok) { Alert.alert("Couldn't delete entry", result.message); return; }
           setModalOpen(false);
@@ -390,18 +452,14 @@ export default function HomeScreen() {
   };
 
   const handleToggleReminders = async (value: boolean) => {
-    if (!summary || savingReminders || summary.remindersEnabled === value) return;
-    const previous = summary.remindersEnabled;
-    setSummary((s) => (s ? { ...s, remindersEnabled: value } : s));
+    if (!tracker || savingReminders || tracker.reminders.periodReminder === value) return;
+    const previous = tracker.reminders;
+    setTracker((t) => (t ? { ...t, reminders: { ...t.reminders, periodReminder: value } } : t));
     setSavingReminders(true);
-    const result = await api("/api/patients/reminders", {
-      method: "PATCH",
-      token: token ?? undefined,
-      body: { enabled: value },
-    });
+    const result = await saveReminders({ periodReminder: value });
     setSavingReminders(false);
     if (!result.ok) {
-      setSummary((s) => (s ? { ...s, remindersEnabled: previous } : s));
+      setTracker((t) => (t ? { ...t, reminders: previous } : t));
       Alert.alert("Couldn't update reminders", result.message);
     }
   };
@@ -429,30 +487,63 @@ export default function HomeScreen() {
     return <HomeSkeleton colors={colors} />;
   }
 
+  // Cycle numbers for the ring, tiles and calendar colours.
+  const periods = tracker?.periods ?? [];
+  const stats = cycleStats(periods, account?.patient?.typicalCycleLength, account?.patient?.typicalPeriodLength);
+  const prediction = predict(periods, startOfDay(today), stats);
+  const phase = prediction ? PHASE_COPY[prediction.phase] : null;
+  const ovulationDay = prediction ? differenceInCalendarDays(prediction.ovulation, prediction.lastStart) + 1 : 14;
+  const inFertile = !!prediction && startOfDay(today) >= prediction.fertileStart && startOfDay(today) <= prediction.fertileEnd;
+  const fertileIn = prediction ? differenceInCalendarDays(prediction.fertileStart, startOfDay(today)) : 0;
+
   const predictedStart = summary?.predictedNextStart ? new Date(summary.predictedNextStart) : null;
   const predictedEnd   = summary?.predictedNextEnd ? new Date(summary.predictedNextEnd) : null;
 
-  const cycleCardLabel = !summary?.latestEntry
-    ? "No entries yet"
-    : summary.reminderMissed
-      ? "Period may be late"
-      : (summary.daysUntilNextPeriod ?? 0) <= 0
-        ? "Period expected"
-        : "Period starts in";
-
-  const cycleCardValue = !summary?.latestEntry
+  const headline = !prediction
     ? "Log your first period"
-    : summary.reminderMissed
-      ? `${Math.abs(summary.daysUntilNextPeriod ?? 0)} Days Late`
-      : (summary.daysUntilNextPeriod ?? 0) <= 0
-        ? "Today"
-        : `${summary.daysUntilNextPeriod} Days`;
+    : prediction.daysLate > 0
+      ? `Period ${prediction.daysLate} day${prediction.daysLate === 1 ? "" : "s"} late`
+      : prediction.daysUntilNext === 0
+        ? "Period expected today"
+        : `Period in ${prediction.daysUntilNext} day${prediction.daysUntilNext === 1 ? "" : "s"}`;
+
+  // The next upcoming or running consultation.
+  const nextConsultation = consultations
+    .map((c) => byDoctor.get(c.doctorId))
+    .filter((c): c is NonNullable<typeof c> => !!c && (c.state === "upcoming" || c.state === "active"))
+    .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())[0];
+
+  // Upcoming reminders, from the reminder settings and the prediction.
+  const reminderItems: { label: string; date: Date }[] = [];
+  if (prediction && tracker?.reminders.periodReminder) {
+    reminderItems.push({ label: `Period expected in ${tracker.reminders.daysBefore} days`, date: addDays(prediction.nextStart, -tracker.reminders.daysBefore) });
+  }
+  if (prediction && tracker?.reminders.fertileReminder) reminderItems.push({ label: "Fertile window begins", date: prediction.fertileStart });
+  const upcomingReminders = reminderItems.filter((i) => i.date >= startOfDay(today)).sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  const quickLinks = [
+    { label: "Calendar", body: "Your cycle by month", Icon: CalendarDays, color: "#d13a8b", bg: "#fce7f5", onPress: () => scrollRef.current?.scrollTo({ y: calendarY - 10, animated: true }) },
+    { label: "Cycle insights", body: "Trends and fertile window", Icon: ChartSpline, color: "#217580", bg: "#cff9f6", onPress: () => router.push("/(tabs)/insights") },
+    { label: "Weight", body: "Track changes over time", Icon: Scale, color: "#b08d48", bg: "#f7f1e6", onPress: () => router.push("/(tabs)/insights") },
+    { label: "Baby growth", body: "From your scan reports", Icon: Baby, color: "#834d8b", bg: "#f5ebfa", onPress: () => router.push("/(tabs)/insights") },
+  ];
+
+  const sectionHeader = (title: string, onSeeAll: () => void) => (
+    <View style={s.sectionRow}>
+      <Text style={[s.sectionTitle, { color: colors.text, marginBottom: 0 }]}>{title}</Text>
+      <Pressable onPress={onSeeAll} style={s.seeAll} hitSlop={8}>
+        <Text style={{ color: accent, fontWeight: "700", fontSize: 13 }}>See all</Text>
+        <ArrowRight size={14} color={accent} />
+      </Pressable>
+    </View>
+  );
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]}>
       <ScrollView
+        ref={scrollRef}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={[s.scroll, { paddingBottom: 100 }]}
+        contentContainerStyle={[s.scroll, { paddingBottom: 110 }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent} />}
       >
         {/* ── Header ── */}
@@ -467,67 +558,159 @@ export default function HomeScreen() {
             </View>
             <View style={s.ml10}>
               <Text style={[s.greeting, { color: colors.textMuted }]}>{greeting()}</Text>
-              <Text style={[s.name, { color: colors.text }]}>{summary?.name || "Welcome"}</Text>
+              <Text style={[s.name, { color: colors.text }]} numberOfLines={1}>
+                {summary?.name?.split(" ")[0] || "Welcome"}
+              </Text>
             </View>
           </View>
-          <Pressable style={[s.bellBtn, { backgroundColor: accentBg }]} onPress={handleBellPress}>
-            <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-              <Path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke={accent} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-              <Path d="M13.73 21a2 2 0 0 1-3.46 0" stroke={accent} strokeWidth={1.8} strokeLinecap="round" />
-            </Svg>
+          <Pressable style={[s.bellBtn, { backgroundColor: accentBg }]} onPress={handleBellPress} accessibilityLabel="Reminders">
+            <Bell size={20} color={accent} />
             {notificationBadge && <View style={s.bellBadge} />}
           </Pressable>
         </View>
 
         <Text style={[s.todayDate, { color: colors.textMuted }]}>{formatFullDate(today)}</Text>
 
-        {/* ── Cycle Card ── */}
-        <LinearGradient
-          colors={["#f27bc1", "#d13a8b"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={s.cycleCard}
-        >
-          <View style={s.dropletWatermark} pointerEvents="none">
-            <Svg width={120} height={120} viewBox="0 0 24 24" fill="rgba(255,255,255,0.18)">
-              <Path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z" stroke="none" />
-            </Svg>
-          </View>
-
-          <View style={s.cycleLabelPill}>
-            <Text style={s.cycleLabel}>{cycleCardLabel}</Text>
-          </View>
-          <Text style={s.cycleDays}>{cycleCardValue}</Text>
-          {predictedStart && predictedEnd && (
-            <View style={s.datePill}>
-              <Text style={s.datePillText}>
-                {formatShort(predictedStart)} – {formatShort(predictedEnd)} (Predicted)
-              </Text>
+        {/* ── Cycle hero ── */}
+        <LinearGradient colors={["#f27bc1", "#d13a8b", "#a82a72"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.hero}>
+          <View style={s.heroGlow} pointerEvents="none" />
+          {prediction ? (
+            <View style={s.heroRow}>
+              <CycleRing cycleLength={stats.averageCycle} periodLength={stats.averagePeriod} ovulationDay={ovulationDay} cycleDay={prediction.cycleDay} size={140}>
+                <Text style={s.ringLabel}>CYCLE DAY</Text>
+                <Text style={s.ringValue}>{prediction.cycleDay}</Text>
+                <View style={s.phasePill}>
+                  <Text style={s.phasePillText}>{prediction.phase}</Text>
+                </View>
+              </CycleRing>
+              <View style={{ flex: 1, marginLeft: 16 }}>
+                <Text style={s.heroHeadline}>{headline}</Text>
+                <Text style={s.heroSub}>
+                  Next period{"\n"}
+                  <Text style={{ fontWeight: "800", color: "#fff" }}>{format(prediction.nextStart, "EEE, d MMM")}</Text>
+                </Text>
+                {predictedStart && predictedEnd && (
+                  <View style={s.datePill}>
+                    <Text style={s.datePillText}>
+                      {formatShort(predictedStart)} – {formatShort(predictedEnd)}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          ) : (
+            <View style={{ alignItems: "center", paddingVertical: 8 }}>
+              <View style={s.emptyRing}>
+                <Droplet size={30} color="#fff" />
+              </View>
+              <Text style={[s.heroHeadline, { textAlign: "center", marginTop: 12 }]}>{headline}</Text>
+              <Text style={[s.heroSub, { textAlign: "center" }]}>Add the start of your last period and we'll estimate your next one.</Text>
             </View>
           )}
 
           <View style={s.cardBtns}>
             <Pressable style={s.addBtn} onPress={() => openAdd()}>
               <Plus size={17} color="#d13a8b" />
-              <Text style={s.addBtnText}>Add Entry</Text>
+              <Text style={s.addBtnText}>Log period</Text>
             </Pressable>
             {summary?.latestEntry && (
               <Pressable style={s.editBtn} onPress={() => openEdit(summary.latestEntry!)}>
                 <Pencil size={15} color="#fff" />
-                <Text style={s.editBtnText}>Edit Cycle</Text>
+                <Text style={s.editBtnText}>Edit last</Text>
               </Pressable>
             )}
           </View>
         </LinearGradient>
 
+        {/* ── Phase tip ── */}
+        {phase && prediction && (
+          <View style={[s.tip, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[s.tipIcon, { backgroundColor: `${phase.color}1A` }]}>
+              <Sparkles size={17} color={phase.color} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[s.tipTitle, { color: phase.color }]}>{prediction.phase} phase</Text>
+              <Text style={[s.tipText, { color: colors.textMuted }]}>{phase.text}</Text>
+            </View>
+          </View>
+        )}
+
+        {/* ── Stats ── */}
+        <View style={s.statsRow}>
+          {[
+            { Icon: Timer, label: "Avg. cycle", value: `${stats.averageCycle} days`, color: "#217580" },
+            { Icon: Droplet, label: "Avg. period", value: `${stats.averagePeriod} days`, color: "#d13a8b" },
+            {
+              Icon: Sparkles,
+              label: "Fertile window",
+              value: !prediction ? "—" : inFertile ? "Now" : fertileIn > 0 ? `In ${fertileIn}d` : format(prediction.fertileStart, "d MMM"),
+              color: "#834d8b",
+            },
+          ].map(({ Icon, label, value, color }) => (
+            <View key={label} style={[s.stat, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <Icon size={17} color={color} />
+              <Text style={[s.statLabel, { color: colors.textMuted }]}>{label}</Text>
+              <Text style={[s.statValue, { color: colors.text }]}>{value}</Text>
+            </View>
+          ))}
+        </View>
+
+        {/* ── Next consultation ── */}
+        {nextConsultation && (
+          <Pressable
+            onPress={() => router.push(`/consultation/${nextConsultation.consultation.doctorId}`)}
+            style={[s.consultCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          >
+            <View style={[s.tipIcon, { backgroundColor: colors.primaryLight }]}>
+              {nextConsultation.state === "active" ? <MessageCircle size={18} color={accent} /> : <CalendarCheck size={18} color={accent} />}
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={[s.rowBetween]}>
+                <Text style={[s.tipTitle, { color: colors.text }]}>Consultation</Text>
+                <View style={[s.smallPill, { backgroundColor: nextConsultation.state === "active" ? "#dcfce7" : colors.primaryLight }]}>
+                  <Text style={{ fontSize: 11, fontWeight: "800", color: nextConsultation.state === "active" ? "#15803d" : accent }}>
+                    {STATE_LABEL[nextConsultation.state].label}
+                  </Text>
+                </View>
+              </View>
+              <Text style={{ color: colors.text, fontSize: 13.5, marginTop: 2 }} numberOfLines={1}>
+                {nextConsultation.consultation.doctor?.name ?? "Your doctor"}
+              </Text>
+              <View style={[s.rowBetween, { justifyContent: "flex-start", gap: 5, marginTop: 2 }]}>
+                <Clock size={12} color={colors.textMuted} />
+                <Text style={{ color: colors.textMuted, fontSize: 12.5 }}>
+                  {nextConsultation.state === "active"
+                    ? `Chat open until ${format(nextConsultation.sessionEndsAt, "d MMM, HH:mm")}`
+                    : format(nextConsultation.startsAt, "EEEE d MMM 'at' HH:mm")}
+                </Text>
+              </View>
+            </View>
+          </Pressable>
+        )}
+
+        {/* ── Quick links ── */}
+        <View style={s.quickGrid}>
+          {quickLinks.map(({ label, body, Icon, color, bg, onPress }) => (
+            <Pressable key={label} onPress={onPress} style={({ pressed }) => [s.quick, { backgroundColor: colors.surface, borderColor: colors.border, opacity: pressed ? 0.8 : 1 }]}>
+              <View style={[s.quickIcon, { backgroundColor: bg }]}>
+                <Icon size={19} color={color} />
+              </View>
+              <Text style={[s.quickTitle, { color: colors.text }]}>{label}</Text>
+              <Text style={[s.quickBody, { color: colors.textMuted }]} numberOfLines={1}>
+                {body}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
         {/* ── Calendar ── */}
-        <View style={[s.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <View onLayout={(e) => setCalendarY(e.nativeEvent.layout.y)} style={[s.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={s.calHeader}>
-            <Pressable onPress={prevMonth} style={s.navArrow}>
+            <Pressable onPress={prevMonth} style={[s.navArrow, { backgroundColor: colors.background }]}>
               <Text style={[s.arrowText, { color: colors.text }]}>‹</Text>
             </Pressable>
             <Text style={[s.monthTitle, { color: colors.text }]}>{MONTHS[calMonth]} {calYear}</Text>
-            <Pressable onPress={nextMonth} style={s.navArrow}>
+            <Pressable onPress={nextMonth} style={[s.navArrow, { backgroundColor: colors.background }]}>
               <Text style={[s.arrowText, { color: colors.text }]}>›</Text>
             </Pressable>
           </View>
@@ -541,29 +724,27 @@ export default function HomeScreen() {
           <View style={s.datesGrid}>
             {calendarCells.map((cell, i) => {
               const cellDate = new Date(calYear, calMonth, cell.day);
-              const isPeriod = cell.thisMonth && !!findEntryForDay(cellDate);
-              const isPredicted =
-                cell.thisMonth && !isPeriod && predictedStart && predictedEnd &&
-                withinRange(cellDate, predictedStart, predictedEnd);
+              const dayPhase = cell.thisMonth ? phaseForDay(cellDate, periods, prediction, stats) : null;
               const isToday =
                 cell.thisMonth && cell.day === today.getDate() &&
                 calMonth === today.getMonth() && calYear === today.getFullYear();
 
-              const bubbleBg = isPeriod ? accent : isPredicted ? "#fce7f5" : "transparent";
-              const bubbleBorder: object = isPredicted && !isPeriod
-                ? { borderWidth: 1.5, borderColor: "#f27bc1", borderStyle: "dashed" as const }
-                : isToday && !isPeriod
-                  ? { borderWidth: 1.5, borderColor: accent }
-                  : {};
-              const textColor = !cell.thisMonth
-                ? "#d1d5db"
-                : isPeriod ? "#fff" : isPredicted || isToday ? accent : colors.text;
-              const fontW: "400" | "700" = isPeriod || isPredicted || isToday ? "700" : "400";
+              const style =
+                dayPhase === "period"
+                  ? { bg: accent, text: "#fff", border: {} }
+                  : dayPhase === "predicted"
+                    ? { bg: "#fce7f5", text: accent, border: { borderWidth: 1.5, borderColor: "#f27bc1", borderStyle: "dashed" as const } }
+                    : dayPhase === "ovulation"
+                      ? { bg: "#834d8b", text: "#fff", border: {} }
+                      : dayPhase === "fertile"
+                        ? { bg: "#cff9f6", text: "#217580", border: {} }
+                        : { bg: "transparent", text: cell.thisMonth ? colors.text : "#d1d5db", border: {} };
+              const todayRing = isToday && dayPhase !== "period" ? { borderWidth: 2, borderColor: colors.text } : {};
 
               return (
                 <Pressable key={i} style={s.dateCell} onPress={() => onDayPress(cell.day, cell.thisMonth)}>
-                  <View style={[s.dateBubble, { backgroundColor: bubbleBg }, bubbleBorder]}>
-                    <Text style={[s.dateText, { color: textColor, fontWeight: fontW }]}>{cell.day}</Text>
+                  <View style={[s.dateBubble, { backgroundColor: style.bg }, style.border, todayRing]}>
+                    <Text style={[s.dateText, { color: style.text, fontWeight: dayPhase || isToday ? "800" : "400" }]}>{cell.day}</Text>
                   </View>
                 </Pressable>
               );
@@ -571,49 +752,104 @@ export default function HomeScreen() {
           </View>
 
           <View style={s.legend}>
-            <View style={s.legendItem}>
-              <View style={[s.legendDot, { backgroundColor: accent }]} />
-              <Text style={[s.legendText, { color: colors.textMuted }]}>Period</Text>
+            {[
+              { label: "Period", dot: { backgroundColor: accent } },
+              { label: "Predicted", dot: { backgroundColor: "#fce7f5", borderWidth: 1.5, borderColor: "#f27bc1", borderStyle: "dashed" as const } },
+              { label: "Fertile", dot: { backgroundColor: "#9be7df" } },
+              { label: "Ovulation", dot: { backgroundColor: "#834d8b" } },
+            ].map((item) => (
+              <View key={item.label} style={s.legendItem}>
+                <View style={[s.legendDot, item.dot]} />
+                <Text style={[s.legendText, { color: colors.textMuted }]}>{item.label}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* ── Reminders ── */}
+        <View style={[s.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={s.reminderRow}>
+            <View style={[s.reminderIcon, { backgroundColor: "#f7f1e6" }]}>
+              <BellRing size={20} color="#b08d48" />
             </View>
-            <View style={s.legendItem}>
-              <View style={[s.legendDot, { backgroundColor: "#fce7f5", borderWidth: 1.5, borderColor: "#f27bc1", borderStyle: "dashed" }]} />
-              <Text style={[s.legendText, { color: colors.textMuted }]}>Predicted</Text>
+            <View style={s.reminderCopy}>
+              <Text style={[s.reminderTitle, { color: colors.text }]}>Reminders</Text>
+              {summary?.remindersEnabled ? (
+                upcomingReminders.length ? (
+                  upcomingReminders.map((item) => (
+                    <Text key={item.label} style={[s.reminderSub, { color: colors.textMuted }]}>
+                      {format(item.date, "EEE d MMM")} · {item.label}
+                    </Text>
+                  ))
+                ) : (
+                  <Text style={[s.reminderSub, { color: colors.textMuted }]}>No upcoming reminders.</Text>
+                )
+              ) : (
+                <Text style={[s.reminderSub, { color: colors.textMuted }]}>Off — cycle updates are paused</Text>
+              )}
             </View>
+            <Pressable
+              accessibilityRole="switch"
+              accessibilityLabel="Cycle reminders"
+              accessibilityState={{ checked: summary?.remindersEnabled ?? false, disabled: savingReminders }}
+              disabled={savingReminders}
+              onPress={() => handleToggleReminders(!(summary?.remindersEnabled ?? false))}
+              style={[s.reminderSwitch, { backgroundColor: summary?.remindersEnabled ? colors.primary : colors.border }]}
+            >
+              <View style={[s.reminderThumb, { backgroundColor: colors.surfaceElevated, transform: [{ translateX: summary?.remindersEnabled ? 24 : 0 }] }]}>
+                {savingReminders && <ActivityIndicator size={12} color={colors.primary} />}
+              </View>
+            </Pressable>
           </View>
         </View>
 
         {/* ── Ad banner (F1) ── */}
-        <AdBanner placement="patient_home" />
+        <AdBanner placement="home" />
 
-        {/* ── Cycle Insights ── */}
-        <Text style={[s.sectionTitle, { color: colors.text }]}>Cycle Insights</Text>
-        <View style={s.insightsRow}>
-          <View style={[s.insightCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={s.insightIcon}>🌸</Text>
-            <Text style={[s.insightLabel, { color: colors.textMuted }]}>CURRENT DAY</Text>
-            <Text style={[s.insightValue, { color: colors.text }]}>
-              {summary?.currentCycleDay ? `Day ${summary.currentCycleDay}` : "–"}
-            </Text>
-          </View>
-          <View style={[s.insightCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={s.insightIcon}>📅</Text>
-            <Text style={[s.insightLabel, { color: colors.textMuted }]}>AVG. CYCLE</Text>
-            <Text style={[s.insightValue, { color: colors.text }]}>{summary?.avgCycleLengthDays ?? "–"} Days</Text>
-          </View>
-          <View style={[s.insightCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <Text style={s.insightIcon}>⏱️</Text>
-            <Text style={[s.insightLabel, { color: colors.textMuted }]}>AVG. LENGTH</Text>
-            <Text style={[s.insightValue, { color: colors.text }]}>{summary?.avgPeriodLengthDays ?? "–"} Days</Text>
-          </View>
-        </View>
+        {/* ── For you to read ── */}
+        {articles.length > 0 && (
+          <>
+            {sectionHeader("For you to read", () => router.push("/(tabs)/learn"))}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.carousel} style={s.carouselWrap}>
+              {articles.map((a) => (
+                <Pressable key={a.slug} onPress={() => router.push(`/content/${a.slug}`)} style={[s.article, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  {a.image ? (
+                    <Image source={{ uri: a.image }} style={s.articleCover} />
+                  ) : (
+                    <LinearGradient colors={[a.cover.from, a.cover.to]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.articleCover} />
+                  )}
+                  <View style={{ padding: 12 }}>
+                    <Text style={[s.articleCategory, { color: accent }]}>{a.category.toUpperCase()}</Text>
+                    <Text style={[s.articleTitle, { color: colors.text }]} numberOfLines={2}>
+                      {a.title}
+                    </Text>
+                    <Text style={{ color: colors.textMuted, fontSize: 11.5, marginTop: 6 }}>{a.readMinutes} min read</Text>
+                  </View>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </>
+        )}
+
+        {/* ── Recommended specialists ── */}
+        {doctors.length > 0 && (
+          <>
+            {sectionHeader("Recommended specialists", () => router.push("/(tabs)/help"))}
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.carousel} style={s.carouselWrap}>
+              {doctors.map((d) => (
+                <View key={d.id} style={{ width: 280 }}>
+                  <DoctorCard doctor={d} compact consultation={byDoctor.get(d.id)} onPress={() => router.push(`/doctor/${d.id}`)} />
+                </View>
+              ))}
+            </ScrollView>
+          </>
+        )}
 
         {/* ── Recent Tracking History ── */}
-        <Text style={[s.sectionTitle, { color: colors.text }]}>Recent Tracking History</Text>
+        <Text style={[s.sectionTitle, { color: colors.text }]}>Recent tracking history</Text>
         <View style={[s.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           {!summary?.recentEntries?.length ? (
-            <Text style={[s.historyEmpty, { color: colors.textMuted }]}>
-              No entries logged yet. Tap "+ Add Entry" to get started.
-            </Text>
+            <Text style={[s.historyEmpty, { color: colors.textMuted }]}>No entries logged yet. Tap "Log period" to get started.</Text>
           ) : (
             summary.recentEntries.map((entry, i) => (
               <Pressable
@@ -629,74 +865,11 @@ export default function HomeScreen() {
           )}
         </View>
 
-        {/* ── Reminders ── */}
-        <Text style={[s.sectionTitle, { color: colors.text }]}>Reminders</Text>
-        <View style={[s.card, { backgroundColor: colors.surface, borderColor: colors.border, marginBottom: 20 }]}>
-          <View style={s.reminderRow}>
-            <View style={[s.reminderIcon, { backgroundColor: accentBg }]}>
-              <Bell size={20} color={accent} />
-            </View>
-            <View style={s.reminderCopy}>
-              <Text style={[s.reminderTitle, { color: colors.text }]}>
-                Cycle reminders
-              </Text>
-              <Text style={[s.reminderSub, { color: colors.textMuted }]}>
-                {summary?.remindersEnabled
-                  ? summary.reminderMissed
-                    ? "On — your period may be overdue"
-                    : summary.nextReminderDate
-                      ? `On — next update around ${formatShort(new Date(summary.nextReminderDate))}`
-                      : "On — add an entry to receive cycle updates"
-                  : "Off — cycle updates are paused"}
-              </Text>
-            </View>
-            <Pressable
-              accessibilityRole="switch"
-              accessibilityLabel="Cycle reminders"
-              accessibilityState={{
-                checked: summary?.remindersEnabled ?? false,
-                disabled: savingReminders,
-              }}
-              disabled={savingReminders}
-              onPress={() =>
-                handleToggleReminders(!(summary?.remindersEnabled ?? false))
-              }
-              style={[
-                s.reminderSwitch,
-                {
-                  backgroundColor: summary?.remindersEnabled
-                    ? colors.primary
-                    : colors.border,
-                },
-              ]}
-            >
-              <View
-                style={[
-                  s.reminderThumb,
-                  {
-                    backgroundColor: colors.surfaceElevated,
-                    transform: [
-                      {
-                        translateX: summary?.remindersEnabled ? 24 : 0,
-                      },
-                    ],
-                  },
-                ]}
-              >
-                {savingReminders && (
-                  <ActivityIndicator size={12} color={colors.primary} />
-                )}
-              </View>
-            </Pressable>
-          </View>
-        </View>
-
         {/* ── Disclaimer ── */}
         <View style={[s.disclaimer, { backgroundColor: accentBg, borderColor: "#f7abd9" }]}>
           <Text style={{ fontSize: 14, marginRight: 6 }}>ℹ️</Text>
           <Text style={[s.disclaimerText, { color: "#834d8b" }]}>
-            Predictions are based on your manual entries and historical data.
-            This tool is not for medical diagnosis or contraception.{" "}
+            Predictions are estimates based on your logged dates, not medical advice or contraception.{" "}
             <Text style={{ fontWeight: "700" }}>Always consult a healthcare professional.</Text>
           </Text>
         </View>
@@ -746,6 +919,40 @@ export default function HomeScreen() {
 
 const s = StyleSheet.create({
   safe: { flex: 1 },
+  hero: { borderRadius: 26, padding: 20, marginBottom: 14, overflow: "hidden" },
+  heroGlow: { position: "absolute", width: 220, height: 220, borderRadius: 110, backgroundColor: "rgba(255,255,255,0.12)", top: -90, right: -70 },
+  heroRow: { flexDirection: "row", alignItems: "center" },
+  ringLabel: { color: "rgba(255,255,255,0.85)", fontSize: 9.5, fontWeight: "800", letterSpacing: 0.8 },
+  ringValue: { color: "#fff", fontSize: 40, fontWeight: "900", lineHeight: 46 },
+  phasePill: { backgroundColor: "rgba(255,255,255,0.24)", borderRadius: 999, paddingHorizontal: 9, paddingVertical: 3 },
+  phasePillText: { color: "#fff", fontSize: 10.5, fontWeight: "800" },
+  heroHeadline: { color: "#fff", fontSize: 22, fontWeight: "900", lineHeight: 27 },
+  heroSub: { color: "rgba(255,255,255,0.88)", fontSize: 13, lineHeight: 19, marginTop: 6 },
+  emptyRing: { width: 84, height: 84, borderRadius: 42, borderWidth: 6, borderColor: "rgba(255,255,255,0.35)", alignItems: "center", justifyContent: "center" },
+  tip: { flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderRadius: 18, padding: 13, marginBottom: 12 },
+  tipIcon: { width: 40, height: 40, borderRadius: 13, alignItems: "center", justifyContent: "center" },
+  tipTitle: { fontSize: 14, fontWeight: "800" },
+  tipText: { fontSize: 12.5, lineHeight: 18, marginTop: 2 },
+  statsRow: { flexDirection: "row", gap: 9, marginBottom: 12 },
+  stat: { flex: 1, borderWidth: 1, borderRadius: 16, padding: 12 },
+  statLabel: { fontSize: 11, marginTop: 8 },
+  statValue: { fontSize: 15, fontWeight: "800", marginTop: 1 },
+  consultCard: { flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderRadius: 18, padding: 13, marginBottom: 12 },
+  rowBetween: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  smallPill: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
+  quickGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 14 },
+  quick: { width: "48.3%", borderWidth: 1, borderRadius: 20, padding: 14 },
+  quickIcon: { width: 40, height: 40, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  quickTitle: { fontSize: 14, fontWeight: "800", marginTop: 10 },
+  quickBody: { fontSize: 11.5, marginTop: 2 },
+  sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 8, marginBottom: 12 },
+  seeAll: { flexDirection: "row", alignItems: "center", gap: 3 },
+  carouselWrap: { marginHorizontal: -20, marginBottom: 14 },
+  carousel: { paddingHorizontal: 20, gap: 12 },
+  article: { width: 230, borderWidth: 1, borderRadius: 20, overflow: "hidden" },
+  articleCover: { width: "100%", height: 110 },
+  articleCategory: { fontSize: 10.5, fontWeight: "800", letterSpacing: 0.6 },
+  articleTitle: { fontSize: 14, fontWeight: "800", lineHeight: 19, marginTop: 4 },
   scroll: { paddingHorizontal: 20, paddingTop: 8 },
   skeletonScroll: { paddingBottom: 110 },
   skeletonHeader: { flexDirection: "row", alignItems: "center", marginBottom: 10 },

@@ -15,7 +15,7 @@ export default function NotFoundScreen() {
         <Text variant="body" color="textMuted" align="center" style={styles.subtitle}>
           This screen doesn’t exist.
         </Text>
-        <Link href="/(tabs)/index" style={[styles.link, { color: theme.colors.primary }]}>
+        <Link href="/" style={[styles.link, { color: theme.colors.primary }]}>
           Go back home
         </Link>
       </View>

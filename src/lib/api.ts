@@ -1,133 +1,102 @@
 import { config } from "@/constants/config";
 
+// Client for the Gyneclinics backend (same API as the webapp: /api/v1).
+// The backend answers { success, message, data, errors? }; api() returns the
+// `data` part, or the first error to show.
+
 export type ApiResult<T> =
-  | { ok: true; data: T }
+  | { ok: true; status: number; data: T; message: string }
   | { ok: false; status: number; message: string };
 
 type RequestOptions = {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
-  headers?: Record<string, string>;
-  token?: string;
+  /** Defaults to the signed-in user's token. Pass null for public endpoints. */
+  token?: string | null;
   signal?: AbortSignal;
   timeoutMs?: number;
 };
 
-const DEFAULT_TIMEOUT = 15000;
+const BASE = `${config.apiUrl.replace(/\/$/, "")}/api/v1`;
+const DEFAULT_TIMEOUT = 15_000;
+const UPLOAD_TIMEOUT = 45_000;
 
-export async function api<T>(
-  path: string,
-  options: RequestOptions = {}
-): Promise<ApiResult<T>> {
-  const {
-    method = "GET",
-    body,
-    headers = {},
-    token,
-    signal,
-    timeoutMs = DEFAULT_TIMEOUT,
-  } = options;
+// Set by AuthProvider: the current login token, and what to do when the
+// backend says it's no longer valid (sign out).
+let sessionToken: string | null = null;
+let onUnauthorized: (() => void) | null = null;
 
+export function setSessionToken(token: string | null) {
+  sessionToken = token;
+}
+
+export function setUnauthorizedHandler(handler: (() => void) | null) {
+  onUnauthorized = handler;
+}
+
+async function request<T>(path: string, init: RequestInit, token: string | null | undefined, timeoutMs: number, signal?: AbortSignal): Promise<ApiResult<T>> {
+  const bearer = token === undefined ? sessionToken : token;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-  if (signal) {
-    signal.addEventListener("abort", () => controller.abort(), { once: true });
-  }
+  signal?.addEventListener("abort", () => controller.abort(), { once: true });
 
   try {
-    const res = await fetch(`${config.apiUrl}${path}`, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...headers,
-      },
-      body: body != null ? JSON.stringify(body) : undefined,
+    const res = await fetch(`${BASE}${path}`, {
+      ...init,
+      headers: { Accept: "application/json", ...(bearer ? { Authorization: `Bearer ${bearer}` } : {}), ...init.headers },
       signal: controller.signal,
     });
-
     const text = await res.text();
-    const json = text ? (JSON.parse(text) as unknown) : null;
+    let json: { message?: unknown; data?: unknown; errors?: unknown } | null = null;
+    try {
+      json = text ? JSON.parse(text) : null;
+    } catch {
+      // Not JSON (e.g. a proxy error page); handled below.
+    }
 
     if (!res.ok) {
-      const message =
-        (json && typeof json === "object" && "message" in json
-          ? String((json as { message: unknown }).message)
-          : null) || `Request failed with ${res.status}`;
+      // A signed-in request was refused: the login has expired or the account was blocked.
+      if (res.status === 401 && bearer && bearer === sessionToken) onUnauthorized?.();
+      const firstError = Array.isArray(json?.errors) ? json.errors[0] : undefined;
+      const message = (typeof firstError === "string" && firstError) || (typeof json?.message === "string" && json.message) || `Something went wrong (${res.status}). Please try again.`;
       return { ok: false, status: res.status, message };
     }
-
-    return { ok: true, data: json as T };
-  } catch (err) {
-    if (controller.signal.aborted) {
-      return { ok: false, status: 0, message: "Request timed out" };
+    return { ok: true, status: res.status, data: (json?.data ?? null) as T, message: typeof json?.message === "string" ? json.message : "OK" };
+  } catch {
+    if (controller.signal.aborted && !signal?.aborted) {
+      return { ok: false, status: 0, message: "The server took too long to answer. Please try again." };
     }
-    return {
-      ok: false,
-      status: 0,
-      message: err instanceof Error ? err.message : "Network error",
-    };
+    return { ok: false, status: 0, message: "Can't reach the server. Please check your connection and try again." };
   } finally {
     clearTimeout(timer);
   }
 }
 
-const DEFAULT_UPLOAD_TIMEOUT = 30000;
+/** JSON request. */
+export function api<T = unknown>(path: string, options: RequestOptions = {}): Promise<ApiResult<T>> {
+  const { method = "GET", body, token, signal, timeoutMs = DEFAULT_TIMEOUT } = options;
+  return request<T>(
+    path,
+    {
+      method,
+      headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    },
+    token,
+    timeoutMs,
+    signal,
+  );
+}
 
-// Uploads a local image (picked via expo-image-picker) to the backend, which
-// converts it to WebP and hosts it on ImgBB. Kept separate from `api()` since
-// this needs a multipart body instead of JSON.
-export async function uploadImage(
-  localUri: string,
-  token?: string,
-  timeoutMs = DEFAULT_UPLOAD_TIMEOUT
-): Promise<ApiResult<{ success: boolean; url: string }>> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+/** A local file (from expo-image-picker) as a multipart form part. */
+export function filePart(uri: string, fallbackName = "photo.jpg") {
+  const name = uri.split("/").pop() || fallbackName;
+  const ext = /\.(\w+)$/.exec(name)?.[1]?.toLowerCase();
+  const type = ext === "png" ? "image/png" : ext === "webp" ? "image/webp" : "image/jpeg";
+  return { uri, name, type } as unknown as Blob;
+}
 
-  try {
-    const filename = localUri.split("/").pop() || `photo-${Date.now()}.jpg`;
-    const match = /\.(\w+)$/.exec(filename);
-    const ext = match?.[1]?.toLowerCase() || "jpg";
-    const mimeType = ext === "png" ? "image/png" : ext === "heic" ? "image/heic" : "image/jpeg";
-
-    const formData = new FormData();
-    formData.append("image", { uri: localUri, name: filename, type: mimeType } as unknown as Blob);
-
-    const res = await fetch(`${config.apiUrl}/api/upload/image`, {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: formData,
-      signal: controller.signal,
-    });
-
-    const text = await res.text();
-    const json = text ? (JSON.parse(text) as unknown) : null;
-
-    if (!res.ok) {
-      const message =
-        (json && typeof json === "object" && "message" in json
-          ? String((json as { message: unknown }).message)
-          : null) || `Upload failed with ${res.status}`;
-      return { ok: false, status: res.status, message };
-    }
-
-    return { ok: true, data: json as { success: boolean; url: string } };
-  } catch (err) {
-    if (controller.signal.aborted) {
-      return { ok: false, status: 0, message: "Upload timed out" };
-    }
-    return {
-      ok: false,
-      status: 0,
-      message: err instanceof Error ? err.message : "Network error",
-    };
-  } finally {
-    clearTimeout(timer);
-  }
+/** Multipart request (photo and story uploads). */
+export function apiForm<T = unknown>(path: string, form: FormData, method: "POST" | "PATCH" = "POST"): Promise<ApiResult<T>> {
+  return request<T>(path, { method, body: form }, undefined, UPLOAD_TIMEOUT);
 }

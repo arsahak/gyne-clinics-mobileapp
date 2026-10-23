@@ -1,6 +1,5 @@
-import { DOCTOR_ACCENT } from "@/constants/theme";
-import { api } from "@/lib/api";
-import { useAuth } from "@/store/AuthContext";
+import { DOCTOR_ACCENT } from "@/constants/brand";
+import { routeForAccount, useAuth } from "@/store/AuthContext";
 import { useTheme } from "@/theme";
 import { useRouter } from "expo-router";
 import { useState } from "react";
@@ -25,14 +24,9 @@ function XIcon({ color }: { color: string }) {
   );
 }
 
-type DoctorProfileResponse = {
-  success: boolean;
-  data: { approvalStatus: "pending" | "approved" | "rejected"; rejectionReason?: string };
-};
-
 export default function DoctorPendingScreen() {
   const { colors } = useTheme();
-  const { token, approvalStatus, setApprovalStatus, logout } = useAuth();
+  const { approvalStatus, refresh, logout } = useAuth();
   const router = useRouter();
   const accent     = DOCTOR_ACCENT;
   const accentLite = DOCTOR_ACCENT + "1A";
@@ -41,25 +35,19 @@ export default function DoctorPendingScreen() {
 
   const rejected = approvalStatus === "rejected";
 
+  // Asks the backend again (GET /auth/me); an admin approves doctors in the dashboard.
   const checkStatus = async () => {
     setChecking(true);
-    const result = await api<DoctorProfileResponse>("/api/doctors/me", {
-      method: "GET",
-      token: token ?? undefined,
-    });
+    const account = await refresh();
     setChecking(false);
 
-    if (!result.ok) {
-      Alert.alert("Couldn't check status", result.message);
+    if (!account) {
+      Alert.alert("Couldn't check status", "Please check your connection and try again.");
       return;
     }
-
-    const status = result.data.data.approvalStatus;
-    await setApprovalStatus(status);
-
-    if (status === "approved") {
-      router.replace("/(doctor-tabs)/home");
-    } else if (status === "pending") {
+    if (account.nextStep === "home") {
+      router.replace(routeForAccount(account));
+    } else if (account.doctorStatus === "pending") {
       Alert.alert("Still under review", "Your profile hasn't been verified yet. Please check back later.");
     }
   };

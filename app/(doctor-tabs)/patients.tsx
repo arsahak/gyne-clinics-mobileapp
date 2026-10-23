@@ -1,8 +1,9 @@
-import { DOCTOR_ACCENT } from "@/constants/theme";
-import { api } from "@/lib/api";
-import { useAuth } from "@/store/AuthContext";
+import { DOCTOR_ACCENT } from "@/constants/brand";
+import { timeline } from "@/lib/consultation";
+import { getMyChats } from "@/lib/services/chats";
+import { getMyConsultations } from "@/lib/services/consultations";
 import { useTheme } from "@/theme";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -18,15 +19,19 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 
-type MonitoringEntry = {
+/** A patient who booked this doctor or wrote to them. */
+type PatientRow = {
   patientId: string;
-  name?: string;
-  phone?: string;
-  latestEntry: { startDate: string; endDate?: string | null } | null;
-  currentCycleDay: number | null;
-  avgCycleLengthDays: number;
-  irregular: boolean;
-  pendingReview: boolean;
+  name: string;
+  /** The chat with them, if they've written. */
+  chatId?: string;
+  consultations: number;
+  lastAt?: string;
+  concerns: string[];
+  /** A consultation is open or about to start. */
+  open: boolean;
+  /** They wrote last and wait for a reply. */
+  waiting: boolean;
 };
 
 function formatShort(d: Date) {
@@ -44,21 +49,44 @@ function SearchIcon({ color }: { color: string }) {
 
 export default function DoctorPatientsScreen() {
   const { colors } = useTheme();
-  const { token } = useAuth();
+  const router = useRouter();
   const accent = DOCTOR_ACCENT;
   const accentBg = DOCTOR_ACCENT + "18";
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [patients, setPatients] = useState<MonitoringEntry[]>([]);
+  const [patients, setPatients] = useState<PatientRow[]>([]);
   const [search, setSearch] = useState("");
 
+  // Built from your consultations and chats on the backend.
   const loadData = useCallback(async () => {
-    const result = await api<{ success: boolean; data: MonitoringEntry[] }>("/api/doctors/patients", {
-      token: token ?? undefined,
-    });
-    if (result.ok) setPatients(result.data.data);
-  }, [token]);
+    const [consultations, chats] = await Promise.all([getMyConsultations(), getMyChats("doctor")]);
+    const rows = new Map<string, PatientRow>();
+    const now = new Date();
+    if (consultations.ok) {
+      for (const c of consultations.data) {
+        if (!c.patient) continue;
+        const row = rows.get(c.patient.id) ?? { patientId: c.patient.id, name: c.patient.name, consultations: 0, concerns: [], open: false, waiting: false };
+        row.consultations += 1;
+        if (!row.lastAt || c.startsAt > row.lastAt) row.lastAt = c.startsAt;
+        if (row.concerns.length < 3) row.concerns.push(c.concern);
+        const state = timeline(c, now).state;
+        if (state === "active" || state === "upcoming") row.open = true;
+        rows.set(c.patient.id, row);
+      }
+    }
+    if (chats.ok) {
+      for (const chat of chats.data) {
+        const id = chat.patientId ?? chat.id;
+        const row = rows.get(id) ?? { patientId: id, name: chat.name, consultations: 0, concerns: [], open: false, waiting: false };
+        row.chatId = chat.id;
+        row.waiting = chat.lastFrom === "patient";
+        if (chat.lastAt && (!row.lastAt || chat.lastAt > row.lastAt)) row.lastAt = chat.lastAt;
+        rows.set(id, row);
+      }
+    }
+    setPatients([...rows.values()].sort((a, b) => (b.lastAt ?? "").localeCompare(a.lastAt ?? "")));
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -77,15 +105,16 @@ export default function DoctorPatientsScreen() {
     setRefreshing(false);
   };
 
-  const showPatientDetail = (p: MonitoringEntry) => {
+  const showPatient = (p: PatientRow) => {
+    if (p.chatId) {
+      router.push(`/consultation/${p.chatId}`);
+      return;
+    }
     const lines = [
-      p.phone ? `Phone: ${p.phone}` : null,
-      p.latestEntry ? `Last period: ${formatShort(new Date(p.latestEntry.startDate))}` : "No period data logged yet",
-      p.currentCycleDay ? `Current cycle day: ${p.currentCycleDay}` : null,
-      `Average cycle: ${p.avgCycleLengthDays} days`,
-      p.irregular ? "⚠️ Cycle appears irregular / overdue" : null,
-      p.pendingReview ? "🔔 Has a pending review" : null,
-    ].filter(Boolean).join("\n");
+      `${p.consultations} consultation${p.consultations === 1 ? "" : "s"}`,
+      ...p.concerns.map((c) => `• ${c}`),
+      "The chat appears once the patient writes.",
+    ].join("\n");
     Alert.alert(p.name || "Patient", lines);
   };
 
@@ -93,7 +122,7 @@ export default function DoctorPatientsScreen() {
     const q = search.trim().toLowerCase();
     if (!q) return patients;
     return patients.filter(
-      (p) => p.name?.toLowerCase().includes(q) || p.phone?.toLowerCase().includes(q)
+      (p) => p.name.toLowerCase().includes(q) || p.concerns.some((c) => c.toLowerCase().includes(q))
     );
   }, [patients, search]);
 
@@ -117,7 +146,7 @@ export default function DoctorPatientsScreen() {
         <TextInput
           value={search}
           onChangeText={setSearch}
-          placeholder="Search by name or phone"
+          placeholder="Search by name or concern"
           placeholderTextColor={colors.textMuted}
           style={[s.searchInput, { color: colors.text }]}
         />
@@ -130,14 +159,14 @@ export default function DoctorPatientsScreen() {
       >
         {!filtered.length ? (
           <Text style={[s.emptyText, { color: colors.textMuted }]}>
-            {patients.length ? "No patients match your search." : "No assigned patients yet."}
+            {patients.length ? "No patients match your search." : "Patients who book or message you will appear here."}
           </Text>
         ) : (
           <View style={[s.card, { backgroundColor: colors.surface }]}>
             {filtered.map((p, i) => (
               <Pressable
                 key={p.patientId}
-                onPress={() => showPatientDetail(p)}
+                onPress={() => showPatient(p)}
                 style={[s.row, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}
               >
                 <View style={[s.avatar, { backgroundColor: accentBg }]}>
@@ -146,18 +175,19 @@ export default function DoctorPatientsScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={[s.name, { color: colors.text }]}>{p.name || "Patient"}</Text>
                   <Text style={[s.sub, { color: colors.textMuted }]}>
-                    {p.latestEntry ? `Last logged ${formatShort(new Date(p.latestEntry.startDate))} · Day ${p.currentCycleDay}` : "No data yet"}
+                    {p.consultations ? `${p.consultations} consultation${p.consultations === 1 ? "" : "s"}` : "Messages"}
+                    {p.lastAt ? ` · ${formatShort(new Date(p.lastAt))}` : ""}
                   </Text>
                 </View>
                 <View style={{ flexDirection: "row", gap: 6 }}>
-                  {p.irregular && (
+                  {p.waiting && (
                     <View style={[s.badge, { backgroundColor: "#fef2f2" }]}>
-                      <Text style={[s.badgeText, { color: "#ef4444" }]}>Irregular</Text>
+                      <Text style={[s.badgeText, { color: "#ef4444" }]}>Waiting</Text>
                     </View>
                   )}
-                  {p.pendingReview && (
+                  {p.open && (
                     <View style={[s.badge, { backgroundColor: accentBg }]}>
-                      <Text style={[s.badgeText, { color: accent }]}>Review</Text>
+                      <Text style={[s.badgeText, { color: accent }]}>Open</Text>
                     </View>
                   )}
                 </View>

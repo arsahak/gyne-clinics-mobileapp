@@ -1,5 +1,7 @@
-import { api, uploadImage } from "@/lib/api";
+import { savePatientProfile, uploadAvatar } from "@/lib/services/patient";
+import type { PregnancyStatus } from "@/lib/types";
 import { useAuth } from "@/store/AuthContext";
+import { format, parseISO } from "date-fns";
 import { useTheme } from "@/theme";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import * as ImagePicker from "expo-image-picker";
@@ -9,11 +11,12 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-type PregnancyStatus = "not_pregnant" | "pregnant" | "postpartum" | "trying_to_conceive";
-type Profile = {
-  age?: number; heightCm?: number; weightKg?: number; pregnancyStatus?: PregnancyStatus;
-  menstrualHistory?: { lastPeriodDate?: string; cycleLengthDays?: number; periodLengthDays?: number };
-  account?: { name?: string; phone?: string; avatar?: string };
+type DateKey = "dob" | "lastPeriod" | "dueDate";
+
+const tenYearsAgo = () => {
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - 10);
+  return d;
 };
 
 function initials(name?: string) {
@@ -33,12 +36,12 @@ const STATUS_OPTIONS: { value: PregnancyStatus; label: string }[] = [
   { value: "not_pregnant", label: "Not pregnant" },
   { value: "pregnant", label: "Pregnant" },
   { value: "postpartum", label: "Postpartum" },
-  { value: "trying_to_conceive", label: "Trying to conceive" },
+  { value: "trying", label: "Trying to conceive" },
 ];
 
 export default function EditPatientProfileScreen() {
   const { colors } = useTheme();
-  const { token } = useAuth();
+  const { account, refresh } = useAuth();
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -47,69 +50,66 @@ export default function EditPatientProfileScreen() {
   const [localAvatar, setLocalAvatar] = useState<string | null>(null);
   const [avatarFailed, setAvatarFailed] = useState(false);
   const [name, setName] = useState("");
-  const [age, setAge] = useState("");
+  const [dob, setDob] = useState<Date | null>(null);
+  const [dueDate, setDueDate] = useState<Date | null>(null);
   const [height, setHeight] = useState("");
   const [weight, setWeight] = useState("");
   const [cycleLength, setCycleLength] = useState("");
   const [periodLength, setPeriodLength] = useState("");
   const [lastPeriod, setLastPeriod] = useState<Date | null>(null);
-  const [showDate, setShowDate] = useState(false);
+  const [pickerFor, setPickerFor] = useState<DateKey | null>(null);
+  const showDate = pickerFor !== null;
+  const setShowDate = (open: boolean) => !open && setPickerFor(null);
   const [draftDate, setDraftDate] = useState(new Date());
   const [androidDatePicked, setAndroidDatePicked] = useState(false);
   const [pregnancyStatus, setPregnancyStatus] = useState<PregnancyStatus>("not_pregnant");
 
+  // The saved profile, fresh from the backend (also edited on the webapp).
   useEffect(() => {
     let active = true;
     (async () => {
-      const result = await api<{ success: boolean; data: Profile }>("/api/patients/me", { token: token ?? undefined });
+      const fresh = (await refresh()) ?? account;
       if (!active) return;
-      if (!result.ok) {
+      const p = fresh?.patient;
+      if (!p) {
         setLoading(false);
-        Alert.alert("Couldn’t load profile", result.message, [{ text: "Go back", onPress: () => router.back() }]);
+        Alert.alert("Couldn’t load profile", "Please check your connection and try again.", [{ text: "Go back", onPress: () => router.back() }]);
         return;
       }
-      const p = result.data.data;
-      setName(p.account?.name ?? "");
-      setAvatar(p.account?.avatar ?? null);
-      setAge(p.age?.toString() ?? "");
-      setHeight(p.heightCm?.toString() ?? "");
-      setWeight(p.weightKg?.toString() ?? "");
-      setCycleLength(p.menstrualHistory?.cycleLengthDays?.toString() ?? "28");
-      setPeriodLength(p.menstrualHistory?.periodLengthDays?.toString() ?? "5");
-      setLastPeriod(p.menstrualHistory?.lastPeriodDate ? new Date(p.menstrualHistory.lastPeriodDate) : null);
+      setName(p.fullName ?? "");
+      setAvatar(fresh?.avatar || null);
+      setDob(p.dateOfBirth ? parseISO(p.dateOfBirth) : null);
+      setHeight(p.heightCm ? String(p.heightCm) : "");
+      setWeight(p.weightKg ? String(p.weightKg) : "");
+      setCycleLength(String(p.typicalCycleLength ?? 28));
+      setPeriodLength(String(p.typicalPeriodLength ?? 5));
+      setLastPeriod(p.lastPeriodStart ? parseISO(p.lastPeriodStart) : null);
       setPregnancyStatus(p.pregnancyStatus ?? "not_pregnant");
+      setDueDate(p.dueDate ? parseISO(p.dueDate) : null);
       setLoading(false);
     })();
     return () => { active = false; };
-  }, [router, token]);
+    // Loaded once when the screen opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const saveProfilePhoto = async (localUri: string) => {
     setLocalAvatar(localUri);
     setAvatarFailed(false);
     setUploadingAvatar(true);
 
-    const uploaded = await uploadImage(localUri, token ?? undefined);
+    const uploaded = await uploadAvatar(localUri);
+    setUploadingAvatar(false);
     if (!uploaded.ok) {
-      setUploadingAvatar(false);
       setLocalAvatar(null);
       Alert.alert("Couldn’t upload photo", uploaded.message);
       return;
     }
 
-    const saved = await api<{ success: boolean; data: Profile }>("/api/patients/me", {
-      method: "PUT",
-      token: token ?? undefined,
-      body: { avatar: uploaded.data.url },
-    });
-    setUploadingAvatar(false);
-    if (!saved.ok) {
-      setLocalAvatar(null);
-      Alert.alert("Couldn’t save photo", saved.message);
-      return;
-    }
-
-    setAvatar(saved.data.data.account?.avatar ?? uploaded.data.url);
+    setAvatar(uploaded.data.avatar || localUri);
     setLocalAvatar(null);
+    // The new photo everywhere (header, tabs).
+    void refresh();
   };
 
   const openPhotoLibrary = async () => {
@@ -145,10 +145,11 @@ export default function EditPatientProfileScreen() {
     ]);
   };
 
-  const openDatePicker = () => {
-    setDraftDate(lastPeriod ?? new Date());
+  const dateValues: Record<DateKey, Date | null> = { dob, lastPeriod, dueDate };
+  const openDatePicker = (which: DateKey) => {
+    setDraftDate(dateValues[which] ?? (which === "dob" ? new Date(1995, 0, 1) : new Date()));
     setAndroidDatePicked(false);
-    setShowDate(true);
+    setPickerFor(which);
   };
 
   const onDateChange = (event: DateTimePickerEvent, date?: Date) => {
@@ -163,36 +164,61 @@ export default function EditPatientProfileScreen() {
   };
 
   const confirmDate = () => {
-    setLastPeriod(draftDate);
-    setShowDate(false);
+    if (pickerFor === "dob") setDob(draftDate);
+    else if (pickerFor === "dueDate") setDueDate(draftDate);
+    else setLastPeriod(draftDate);
+    setPickerFor(null);
   };
 
+  // Same limits as onboarding and the backend.
   const save = async () => {
-    const values = { age: Number(age), height: Number(height), weight: Number(weight), cycle: Number(cycleLength), period: Number(periodLength) };
+    const values = { height: Number(height), weight: Number(weight.replace(",", ".")), cycle: Number(cycleLength), period: Number(periodLength) };
     if (name.trim().length < 2) return Alert.alert("Check your name", "Please enter at least 2 characters.");
-    if (!Number.isFinite(values.age) || values.age < 10 || values.age > 120) return Alert.alert("Check your age", "Enter an age between 10 and 120.");
-    if (!Number.isFinite(values.height) || values.height < 80 || values.height > 250) return Alert.alert("Check your height", "Enter a height between 80 and 250 cm.");
-    if (!Number.isFinite(values.weight) || values.weight < 20 || values.weight > 400) return Alert.alert("Check your weight", "Enter a weight between 20 and 400 kg.");
-    if (!Number.isFinite(values.cycle) || values.cycle < 15 || values.cycle > 90) return Alert.alert("Check cycle length", "Enter a cycle length between 15 and 90 days.");
-    if (!Number.isFinite(values.period) || values.period < 1 || values.period > 20) return Alert.alert("Check period length", "Enter a period length between 1 and 20 days.");
+    if (!dob) return Alert.alert("Add your date of birth", "Your date of birth is needed for your health profile.");
+    if (!Number.isFinite(values.height) || values.height < 100 || values.height > 230) return Alert.alert("Check your height", "Enter a height between 100 and 230 cm.");
+    if (!Number.isFinite(values.weight) || values.weight < 25 || values.weight > 250) return Alert.alert("Check your weight", "Enter a weight between 25 and 250 kg.");
+    if (!Number.isFinite(values.cycle) || values.cycle < 15 || values.cycle > 60) return Alert.alert("Check cycle length", "Enter a cycle length between 15 and 60 days.");
+    if (!Number.isFinite(values.period) || values.period < 1 || values.period > 14) return Alert.alert("Check period length", "Enter a period length between 1 and 14 days.");
+    if (pregnancyStatus === "pregnant" && !dueDate) return Alert.alert("Add your due date", "Please add your estimated due date.");
 
     setSaving(true);
-    const result = await api<{ success: boolean }>("/api/patients/me", {
-      method: "PUT",
-      token: token ?? undefined,
-      body: {
-        name: name.trim(), age: values.age, heightCm: values.height, weightKg: values.weight,
-        pregnancyStatus,
-        menstrualHistory: {
-          cycleLengthDays: values.cycle,
-          periodLengthDays: values.period,
-          ...(lastPeriod ? { lastPeriodDate: lastPeriod.toISOString() } : {}),
-        },
-      },
+    const result = await savePatientProfile({
+      fullName: name.trim(),
+      dateOfBirth: format(dob, "yyyy-MM-dd"),
+      heightCm: values.height,
+      weightKg: values.weight,
+      typicalCycleLength: values.cycle,
+      typicalPeriodLength: values.period,
+      lastPeriodStart: lastPeriod ? format(lastPeriod, "yyyy-MM-dd") : "",
+      pregnancyStatus,
+      dueDate: pregnancyStatus === "pregnant" && dueDate ? format(dueDate, "yyyy-MM-dd") : undefined,
     });
     setSaving(false);
     if (!result.ok) return Alert.alert("Couldn’t save profile", result.message);
+    await refresh();
     Alert.alert("Profile updated", "Your health details have been saved.", [{ text: "Done", onPress: () => router.back() }]);
+  };
+
+  /** A tappable date row, same look as "Last period start". */
+  const dateButton = (which: DateKey, label: string) => {
+    const value = dateValues[which];
+    return (
+      <View style={s.dateField}>
+        <Text style={[s.label, { color: colors.text }]}>{label}</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Choose ${label.toLowerCase()}`}
+          onPress={() => openDatePicker(which)}
+          style={[s.dateButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
+        >
+          <CalendarDays size={18} color={value ? colors.primary : colors.textMuted} />
+          <Text style={{ color: value ? colors.text : colors.textMuted, fontSize: 14, flex: 1 }}>{value ? formatShortDate(value) : "Tap to select"}</Text>
+          <View style={[s.dateBadge, { backgroundColor: colors.primaryLight }]}>
+            <Text style={[s.dateBadgeText, { color: colors.primary }]}>{value ? "Change" : "Select"}</Text>
+          </View>
+        </Pressable>
+      </View>
+    );
   };
 
   return (
@@ -251,51 +277,18 @@ export default function EditPatientProfileScreen() {
 
             <Text style={[s.section, { color: colors.textMuted }]}>PERSONAL DETAILS</Text>
             <Field label="Full name" value={name} onChangeText={setName} placeholder="Your full name" colors={colors} />
+            {dateButton("dob", "Date of birth")}
             <View style={s.twoColumns}>
-              <View style={s.column}><Field label="Age" value={age} onChangeText={setAge} placeholder="Age" numeric colors={colors} /></View>
               <View style={s.column}><Field label="Height (cm)" value={height} onChangeText={setHeight} placeholder="165" numeric colors={colors} /></View>
+              <View style={s.column}><Field label="Weight (kg)" value={weight} onChangeText={setWeight} placeholder="60" numeric colors={colors} /></View>
             </View>
-            <Field label="Weight (kg)" value={weight} onChangeText={setWeight} placeholder="60" numeric colors={colors} />
 
             <Text style={[s.section, { color: colors.textMuted }]}>CYCLE DETAILS</Text>
             <View style={s.twoColumns}>
               <View style={s.column}><Field label="Cycle length" value={cycleLength} onChangeText={setCycleLength} placeholder="28 days" numeric colors={colors} /></View>
               <View style={s.column}><Field label="Period length" value={periodLength} onChangeText={setPeriodLength} placeholder="5 days" numeric colors={colors} /></View>
             </View>
-            <View style={s.dateField}>
-              <Text style={[s.label, { color: colors.text }]}>Last period start</Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Choose last period start date"
-                onPress={openDatePicker}
-                style={[
-                  s.dateButton,
-                  {
-                    backgroundColor: colors.surface,
-                    borderColor: colors.border,
-                  },
-                ]}
-              >
-                <CalendarDays
-                  size={18}
-                  color={lastPeriod ? colors.primary : colors.textMuted}
-                />
-                <Text
-                  style={{
-                    color: lastPeriod ? colors.text : colors.textMuted,
-                    fontSize: 14,
-                    flex: 1,
-                  }}
-                >
-                  {lastPeriod ? formatShortDate(lastPeriod) : "Tap to select"}
-                </Text>
-                <View style={[s.dateBadge, { backgroundColor: colors.primaryLight }]}> 
-                  <Text style={[s.dateBadgeText, { color: colors.primary }]}> 
-                    {lastPeriod ? "Change" : "Select"}
-                  </Text>
-                </View>
-              </Pressable>
-            </View>
+            {dateButton("lastPeriod", "Last period start")}
 
             <Text style={[s.label, { color: colors.text, marginTop: 17 }]}>Pregnancy status</Text>
             <View style={s.chips}>
@@ -306,6 +299,7 @@ export default function EditPatientProfileScreen() {
                 </Pressable>;
               })}
             </View>
+            {pregnancyStatus === "pregnant" && dateButton("dueDate", "Estimated due date")}
             <Pressable onPress={save} disabled={saving} style={[s.saveButton, { backgroundColor: colors.primary, opacity: saving ? 0.65 : 1 }]}>
               {saving ? <ActivityIndicator color="#fff" /> : <><Save size={18} color="#fff" /><Text style={s.saveText}>Save changes</Text></>}
             </Pressable>
@@ -333,7 +327,8 @@ export default function EditPatientProfileScreen() {
                   value={draftDate}
                   mode="date"
                   display={Platform.OS === "ios" ? "spinner" : "default"}
-                  maximumDate={new Date()}
+                  minimumDate={pickerFor === "dueDate" ? new Date() : undefined}
+                  maximumDate={pickerFor === "dueDate" ? undefined : pickerFor === "dob" ? tenYearsAgo() : new Date()}
                   onChange={onDateChange}
                 />
               )}

@@ -1,7 +1,10 @@
 import { Text } from "@/components";
 import { config } from "@/constants/config";
-import { DOCTOR_ACCENT } from "@/constants/theme";
-import { api } from "@/lib/api";
+import { DOCTOR_ACCENT } from "@/constants/brand";
+import { formatMoney } from "@/lib/locale/regions";
+import { deleteAccount } from "@/lib/services/auth";
+import { getMyDoctorProfile } from "@/lib/services/doctors";
+import { getMyEarnings, requestWithdrawal } from "@/lib/services/misc";
 import { useAuth } from "@/store/AuthContext";
 import { useTheme } from "@/theme";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -22,6 +25,9 @@ import {
   Stethoscope,
   Sun,
   IdCard,
+  Trash2,
+  Video,
+  Wallet,
 } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Animated, Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
@@ -37,6 +43,8 @@ type DoctorProfile = {
   hospitalAddress?: string;
   languages?: string[];
   approvalStatus: "pending" | "approved" | "rejected";
+  /** Changes waiting for an admin before patients see them. */
+  updateInReview: boolean;
   avgRating: number;
   reviewCount: number;
   account?: {
@@ -68,7 +76,7 @@ function approvalCopy(status?: DoctorProfile["approvalStatus"]) {
 
 export default function DoctorSettingsScreen() {
   const { colors, setMode, mode } = useTheme();
-  const { logout, token, phone } = useAuth();
+  const { logout, phone } = useAuth();
   const router = useRouter();
   const accent = DOCTOR_ACCENT;
   const accentBg = `${DOCTOR_ACCENT}18`;
@@ -80,17 +88,79 @@ export default function DoctorSettingsScreen() {
   const loadProfile = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const result = await api<{ success: boolean; data: DoctorProfile }>("/api/doctors/me", {
-      token: token ?? undefined,
-    });
+    const result = await getMyDoctorProfile();
     if (result.ok) {
-      setProfile(result.data.data);
+      const p = result.data;
+      setProfile({
+        _id: p.id,
+        qualifications: p.qualifications,
+        specialization: p.specialization,
+        experienceYears: p.experienceYears,
+        registrationNumber: p.registrationNumber,
+        hospitalName: p.clinic || undefined,
+        hospitalAddress: p.city || undefined,
+        languages: p.languages,
+        approvalStatus: p.verificationStatus,
+        updateInReview: Boolean(p.pendingUpdate),
+        avgRating: p.rating,
+        reviewCount: p.reviewCount,
+        account: { name: p.fullName, phone: p.phone, email: p.email || undefined, avatar: p.avatar || undefined, isVerified: true },
+      });
       setAvatarFailed(false);
     } else {
       setError(result.message);
     }
     setLoading(false);
-  }, [token]);
+  }, []);
+
+  // Balance from the backend; a withdrawal goes to the doctor's Stripe account.
+  const showEarnings = async () => {
+    const result = await getMyEarnings();
+    if (!result.ok) {
+      Alert.alert("Couldn’t load earnings", result.message);
+      return;
+    }
+    const e = result.data;
+    const lines = [
+      `Available: ${formatMoney(e.balance.availableGBP, "GBP")}`,
+      `Clearing: ${formatMoney(e.balance.clearingGBP, "GBP")}`,
+      `Paid out: ${formatMoney(e.balance.paidOutGBP, "GBP")}`,
+      `Lifetime: ${formatMoney(e.balance.lifetimeGBP, "GBP")} · ${e.balance.consultations} consultations`,
+      e.stripe.status === "ready" ? `Payouts to ${e.stripe.destination ?? "your Stripe account"}` : "Set up Stripe payouts on the webapp (Earnings) to withdraw.",
+    ].join("\n");
+    const canWithdraw = e.stripe.status === "ready" && e.balance.availableGBP >= e.minWithdrawalGBP && e.balance.availableGBP > 0;
+    Alert.alert("Earnings", lines, [
+      { text: "Close", style: "cancel" },
+      ...(canWithdraw
+        ? [{
+            text: `Withdraw ${formatMoney(e.balance.availableGBP, "GBP")}`,
+            onPress: async () => {
+              const sent = await requestWithdrawal(e.balance.availableGBP);
+              Alert.alert(sent.ok ? "Withdrawal requested" : "Couldn’t request withdrawal", sent.message);
+            },
+          }]
+        : []),
+    ]);
+  };
+
+  const confirmDelete = () => {
+    Alert.alert("Delete your account?", "Your profile, chats and reviews are deleted permanently. This can’t be undone.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          const result = await deleteAccount();
+          if (!result.ok) {
+            Alert.alert("Couldn’t delete your account", result.message);
+            return;
+          }
+          await logout();
+          router.replace("/login");
+        },
+      },
+    ]);
+  };
 
   useFocusEffect(useCallback(() => { void loadProfile(); }, [loadProfile]));
 
@@ -147,6 +217,11 @@ export default function DoctorSettingsScreen() {
                 <View style={[s.statusBadge, { backgroundColor: status.background }]}>
                   <Text style={[s.statusText, { color: status.color }]}>{status.label}</Text>
                 </View>
+                {profile?.updateInReview && (
+                  <View style={[s.statusBadge, { backgroundColor: "#fef3c7" }]}>
+                    <Text style={[s.statusText, { color: "#a16207" }]}>UPDATE IN REVIEW</Text>
+                  </View>
+                )}
               </View>
               <Pressable accessibilityLabel="Edit doctor profile" onPress={() => router.push("/edit-doctor-profile")} style={[s.editButton, { backgroundColor: accentBg }]}>
                 <Pencil size={17} color={accent} />
@@ -178,6 +253,10 @@ export default function DoctorSettingsScreen() {
           <MenuRow icon={<CalendarClock size={19} color={accent} />} iconBg={accentBg} title="Availability" subtitle="Manage consultation hours" onPress={() => router.push("/(doctor-tabs)/availability")} colors={colors} />
           <View style={[s.rowDivider, { backgroundColor: colors.border }]} />
           <MenuRow icon={<MessageCircle size={19} color={colors.secondary} />} iconBg={colors.secondaryLight} title="Conversations" subtitle="Open patient consultations" onPress={() => router.push("/(doctor-tabs)/chat")} colors={colors} />
+          <View style={[s.rowDivider, { backgroundColor: colors.border }]} />
+          <MenuRow icon={<Wallet size={19} color={colors.teal} />} iconBg={colors.tealLight} title="Earnings" subtitle="Balance and withdrawals" onPress={showEarnings} colors={colors} />
+          <View style={[s.rowDivider, { backgroundColor: colors.border }]} />
+          <MenuRow icon={<Video size={19} color={accent} />} iconBg={accentBg} title="Test video call" subtitle="Check your camera and microphone" onPress={() => router.push("/consultation/video-call")} colors={colors} />
         </View>
 
         <Text style={[s.sectionLabel, { color: colors.textMuted }]}>APPEARANCE</Text>
@@ -195,6 +274,10 @@ export default function DoctorSettingsScreen() {
 
         <Pressable onPress={confirmLogout} style={[s.logoutButton, { borderColor: `${colors.danger}55` }]}>
           <LogOut size={19} color={colors.danger} /><Text variant="bodyBold" color="danger">Sign out</Text>
+        </Pressable>
+        <Pressable onPress={confirmDelete} style={s.deleteRow} accessibilityRole="button">
+          <Trash2 size={15} color={colors.textMuted} />
+          <Text variant="caption" color="textMuted">Delete account</Text>
         </Pressable>
         <Text variant="caption" color="textMuted" align="center" style={s.version}>GyneClinics for Doctors · Version {config.appVersion}</Text>
       </ScrollView>
@@ -242,6 +325,7 @@ function DoctorSettingsSkeleton({ colors }: { colors: ReturnType<typeof useTheme
 }
 
 const s = StyleSheet.create({
+  deleteRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 14, paddingVertical: 6 },
   safe: { flex: 1 }, scroll: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 112 },
   headingRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 22 }, subtitle: { marginTop: 3 },
   shield: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center" },

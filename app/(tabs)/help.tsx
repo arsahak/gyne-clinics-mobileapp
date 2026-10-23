@@ -1,302 +1,308 @@
 import { AdBanner } from "@/components";
-import { api } from "@/lib/api";
-import { useAuth } from "@/store/AuthContext";
+import { DoctorGridCard } from "@/components/doctors";
+import { FEED_AD_FREQUENCY } from "@/lib/ads";
+import { getDoctors } from "@/lib/services/doctors";
+import { getMyNotifications, markAllNotificationsRead } from "@/lib/services/misc";
+import type { InboxItem } from "@/lib/notifications";
+import type { Availability, Doctor } from "@/lib/types";
+import { type DoctorConsultation, useMyConsultations } from "@/lib/useMyConsultations";
 import { useTheme } from "@/theme";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { Bell, CalendarCheck, MessageCircle, Search, SlidersHorizontal, Stethoscope } from "lucide-react-native";
+import { Fragment, useCallback, useMemo, useState } from "react";
+import { ActivityIndicator, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Svg, { Circle, Path } from "react-native-svg";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
-type DoctorUser = { _id: string; name?: string; phone?: string };
-type Doctor = {
-  _id: string;
-  user: DoctorUser;
-  specialization?: string;
-  experienceYears?: number;
-  consultationFee?: number;
-  languages?: string[];
-  consultationTypes?: ("online" | "in_person")[];
-  avgRating: number;
-  reviewCount: number;
-  featured: boolean;
+// Get help → Find a specialist. Same as the webapp's /patient/doctors:
+// search, filters, "Your doctors" first, then every verified specialist.
+
+const GRID_PAD = 20; // matches s.padH
+const GRID_GAP = 12;
+
+type Sort = "recommended" | "rating" | "experience" | "fee";
+const AVAILABILITY_RANK: Record<Availability, number> = { online: 0, today: 1, this_week: 2, away: 3 };
+/** "Your doctors" order: open consultations first, then the most recent. */
+const STATE_RANK: Record<DoctorConsultation["state"], number> = { active: 0, upcoming: 1, follow_up: 2, closed: 3, refunded: 4 };
+
+const initialFilters = {
+  query: "",
+  specialization: "all",
+  availability: "any" as "any" | Availability,
+  experience: 0,
+  rating: 0,
+  sort: "recommended" as Sort,
 };
-type Notification = { _id: string; title: string; body: string; createdAt: string };
+type Filters = typeof initialFilters;
 
-// ── Icons ────────────────────────────────────────────────────────────────────
-function SearchIcon({ color }: { color: string }) {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-      <Circle cx="11" cy="11" r="8" stroke={color} strokeWidth={1.8} />
-      <Path d="M21 21l-4.35-4.35" stroke={color} strokeWidth={1.8} strokeLinecap="round" />
-    </Svg>
-  );
-}
-function BellIcon({ color }: { color: string }) {
-  return (
-    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-      <Path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"
-        stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-      <Path d="M13.73 21a2 2 0 0 1-3.46 0"
-        stroke={color} strokeWidth={1.8} strokeLinecap="round" />
-    </Svg>
-  );
-}
-function MessageIcon({ color }: { color: string }) {
-  return (
-    <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-      <Path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"
-        stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-    </Svg>
-  );
-}
-function ShieldIcon({ color }: { color: string }) {
-  return (
-    <Svg width={28} height={28} viewBox="0 0 24 24" fill="none">
-      <Path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"
-        stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"
-        fill={color} fillOpacity={0.12} />
-      <Path d="M9 12l2 2 4-4" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
-    </Svg>
-  );
-}
-function StarIcon({ color }: { color: string }) {
-  return (
-    <Svg width={13} height={13} viewBox="0 0 24 24" fill={color}>
-      <Path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-    </Svg>
-  );
-}
-
-const FILTERS = [
-  { label: "All Filters", value: "" },
-  { label: "Top Rated", value: "rating" },
-  { label: "Most Experienced", value: "experience" },
-  { label: "Online Consultation", value: "online" },
+const AVAILABILITY_OPTIONS: { value: Filters["availability"]; label: string }[] = [
+  { value: "any", label: "Any availability" },
+  { value: "online", label: "Online now" },
+  { value: "today", label: "Available today" },
+  { value: "this_week", label: "This week" },
+];
+const EXPERIENCE_OPTIONS = [
+  { value: 0, label: "Any experience" },
+  { value: 5, label: "5+ years" },
+  { value: 10, label: "10+ years" },
+  { value: 15, label: "15+ years" },
+];
+const RATING_OPTIONS = [
+  { value: 0, label: "Any rating" },
+  { value: 4.5, label: "4.5 ★ and up" },
+  { value: 4.8, label: "4.8 ★ and up" },
+];
+const SORT_OPTIONS: { value: Sort; label: string }[] = [
+  { value: "recommended", label: "Recommended" },
+  { value: "rating", label: "Highest rated" },
+  { value: "experience", label: "Most experienced" },
+  { value: "fee", label: "Lowest fee" },
 ];
 
-// ── Screen ───────────────────────────────────────────────────────────────────
 export default function HelpScreen() {
   const { colors } = useTheme();
-  const { token } = useAuth();
   const router = useRouter();
-  const pink = colors.primary;
-  const pinkLite = colors.primaryLight;
-  const teal = colors.teal;
-  const tealLite = colors.tealLight;
+  const { byDoctor: mine, reload: reloadMine } = useMyConsultations();
+  const accent = colors.primary;
 
   const [loading, setLoading] = useState(true);
-  const [query, setQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const [starting, setStarting] = useState<string | null>(null);
+  const [filters, setFilters] = useState(initialFilters);
+  const [showFilters, setShowFilters] = useState(false);
 
   const [notifOpen, setNotifOpen] = useState(false);
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [notifications, setNotifications] = useState<InboxItem[]>([]);
+  const [unread, setUnread] = useState(0);
 
-  const loadDoctors = useCallback(async () => {
-    const params = new URLSearchParams();
-    if (query.trim()) params.set("search", query.trim());
-    if (activeFilter === "rating" || activeFilter === "experience") params.set("sort", activeFilter);
-    if (activeFilter === "online") params.set("consultationType", "online");
+  const set = <K extends keyof Filters>(key: K, value: Filters[K]) => setFilters((f) => ({ ...f, [key]: value }));
 
-    const result = await api<{ success: boolean; data: Doctor[] }>(`/api/doctors?${params}`, {
-      token: token ?? undefined,
-    });
-    if (result.ok) setDoctors(result.data.data);
-  }, [token, query, activeFilter]);
+  const load = useCallback(async () => {
+    const [list, inbox] = await Promise.all([getDoctors(), getMyNotifications(30)]);
+    if (list.ok) {
+      setDoctors(list.data);
+      setError(null);
+    } else {
+      setError(list.message);
+    }
+    if (inbox.ok) {
+      setNotifications(inbox.data.items);
+      setUnread(inbox.data.unread);
+    }
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
       let active = true;
       (async () => {
-        await loadDoctors();
+        await load();
         if (active) setLoading(false);
       })();
-      return () => { active = false; };
-    }, [loadDoctors])
+      return () => {
+        active = false;
+      };
+    }, [load]),
   );
 
-  const openNotifications = async () => {
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await Promise.all([load(), reloadMine()]);
+    setRefreshing(false);
+  };
+
+  const openNotifications = () => {
     setNotifOpen(true);
-    const result = await api<{ success: boolean; data: Notification[] }>("/api/notifications/me", {
-      token: token ?? undefined,
-    });
-    if (result.ok) setNotifications(result.data.data);
-  };
-
-  const startChat = async (doctor: Doctor) => {
-    setStarting(doctor.user._id);
-    const result = await api<{ success: boolean; data: { _id: string } }>("/api/chats", {
-      method: "POST",
-      token: token ?? undefined,
-      body: { doctorId: doctor.user._id },
-    });
-    setStarting(null);
-
-    if (!result.ok) {
-      Alert.alert("Couldn't start chat", result.message);
-      return;
+    if (unread > 0) {
+      setUnread(0);
+      void markAllNotificationsRead();
     }
-    router.push(`/consultation/${result.data.data._id}`);
   };
+
+  const specializations = useMemo(() => [...new Set(doctors.map((d) => d.specialization).filter(Boolean))].sort(), [doctors]);
+
+  const visible = useMemo(() => {
+    const q = filters.query.trim().toLowerCase();
+    return doctors
+      .filter((d) => !q || `${d.name} ${d.specialization} ${d.focusAreas.join(" ")}`.toLowerCase().includes(q))
+      .filter((d) => filters.specialization === "all" || d.specialization === filters.specialization)
+      .filter((d) => filters.availability === "any" || AVAILABILITY_RANK[d.availability] <= AVAILABILITY_RANK[filters.availability])
+      .filter((d) => d.experienceYears >= filters.experience)
+      .filter((d) => d.rating >= filters.rating)
+      .sort((a, b) => {
+        switch (filters.sort) {
+          case "rating":
+            return b.rating - a.rating || b.reviewCount - a.reviewCount;
+          case "experience":
+            return b.experienceYears - a.experienceYears;
+          case "fee":
+            return a.feeGBP - b.feeGBP;
+          default:
+            return Number(!!b.recommended) - Number(!!a.recommended) || AVAILABILITY_RANK[a.availability] - AVAILABILITY_RANK[b.availability] || b.rating - a.rating;
+        }
+      });
+  }, [doctors, filters]);
+
+  const active = JSON.stringify(filters) !== JSON.stringify(initialFilters);
+
+  // Doctors the patient has booked, shown first ("Your doctors") unless a filter is on.
+  const yourDoctors = active
+    ? []
+    : visible
+        .filter((d) => mine.has(d.id))
+        .sort((a, b) => {
+          const x = mine.get(a.id)!;
+          const y = mine.get(b.id)!;
+          return STATE_RANK[x.state] - STATE_RANK[y.state] || y.startsAt.getTime() - x.startsAt.getTime();
+        });
+  const others = yourDoctors.length ? visible.filter((d) => !mine.has(d.id)) : visible;
+
+  // Grid: 2 columns on phones, 3 on wide screens; an ad after every group of
+  // full rows (about FEED_AD_FREQUENCY cards).
+  const { width: screenWidth } = useWindowDimensions();
+  const columns = screenWidth >= 700 ? 3 : 2;
+  const cardWidth = Math.floor((screenWidth - GRID_PAD * 2 - GRID_GAP * (columns - 1)) / columns);
+  const perGroup = Math.max(columns, Math.round(FEED_AD_FREQUENCY / columns) * columns);
+  const feedGroups = useMemo(() => {
+    const groups: Doctor[][] = [];
+    for (let i = 0; i < others.length; i += perGroup) groups.push(others.slice(i, i + perGroup));
+    return groups;
+  }, [others, perGroup]);
+  const open = (doctor: Doctor) => router.push(`/doctor/${doctor.id}`);
+
+  const chipRow = <T extends string | number>(options: { value: T; label: string }[], value: T, onChange: (v: T) => void) => (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.chipRow}>
+      {options.map((o) => {
+        const on = o.value === value;
+        return (
+          <Pressable key={String(o.value)} onPress={() => onChange(o.value)} style={[s.pill, on ? { backgroundColor: accent, borderColor: accent } : { borderColor: colors.border }]}>
+            <Text style={[s.pillText, { color: on ? "#fff" : colors.textMuted }]}>{o.label}</Text>
+          </Pressable>
+        );
+      })}
+    </ScrollView>
+  );
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]}>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 110 }}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={accent} />}
+      >
+        {/* ── Header ── */}
+        <View style={s.topBar}>
+          <View style={{ flex: 1 }}>
+            <Text style={[s.screenTitle, { color: colors.text }]} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>Find a specialist</Text>
+          </View>
+          <View style={s.iconRow}>
+            <Pressable accessibilityLabel="My consultations" style={[s.iconBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]} onPress={() => router.push("/consultations")}>
+              <CalendarCheck size={19} color={colors.text} />
+            </Pressable>
+            <Pressable accessibilityLabel="Messages" style={[s.iconBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]} onPress={() => router.push("/messages")}>
+              <MessageCircle size={19} color={colors.text} />
+            </Pressable>
+            <Pressable accessibilityLabel="Notifications" style={[s.iconBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]} onPress={openNotifications}>
+              <Bell size={19} color={colors.text} />
+              {unread > 0 && <View style={s.badgeDot} />}
+            </Pressable>
+          </View>
+        </View>
 
-      {/* ── Top bar ── */}
-      <View style={s.topBar}>
-        <Text style={[s.screenTitle, { color: colors.text }]}>Find a Specialist</Text>
-        <View style={{ flexDirection: "row", gap: 8 }}>
-          <Pressable style={[s.iconBtn, { backgroundColor: colors.surface }]} onPress={() => router.push("/consultations")}>
-            <MessageIcon color={colors.text} />
-          </Pressable>
-          <Pressable style={[s.bellWrap, { backgroundColor: colors.surface }]} onPress={openNotifications}>
-            <BellIcon color={colors.text} />
+        {/* ── Search + filters ── */}
+        <View style={[s.searchRow, s.padH]}>
+          <View style={[s.searchBar, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
+            <Search size={17} color={colors.textMuted} />
+            <TextInput
+              style={[s.searchInput, { color: colors.text }]}
+              placeholder="Search by name or concern, e.g. PCOS"
+              placeholderTextColor={colors.textMuted}
+              value={filters.query}
+              onChangeText={(v) => set("query", v)}
+              returnKeyType="search"
+            />
+          </View>
+          <Pressable
+            onPress={() => setShowFilters((v) => !v)}
+            accessibilityState={{ expanded: showFilters }}
+            style={[s.filterBtn, { borderColor: showFilters ? accent : colors.border, backgroundColor: showFilters ? colors.primaryLight : colors.surfaceElevated }]}
+          >
+            <SlidersHorizontal size={16} color={showFilters ? accent : colors.text} />
+            <Text style={{ color: showFilters ? accent : colors.text, fontWeight: "700", fontSize: 13 }}>Filters</Text>
           </Pressable>
         </View>
-      </View>
 
-      {/* ── Search bar ── */}
-      <View style={[s.searchBar, { backgroundColor: colors.surface }]}>
-        <SearchIcon color={colors.textMuted} />
-        <TextInput
-          style={[s.searchInput, { color: colors.text }]}
-          placeholder="Search gynaecologists, specializations…"
-          placeholderTextColor={colors.textMuted}
-          value={query}
-          onChangeText={setQuery}
-          onSubmitEditing={() => { setLoading(true); loadDoctors().then(() => setLoading(false)); }}
-          returnKeyType="search"
-        />
-      </View>
+        {showFilters && (
+          <View style={s.filterPanel}>
+            {chipRow([{ value: "all", label: "All specialisations" }, ...specializations.map((v) => ({ value: v, label: v }))], filters.specialization, (v) => set("specialization", v))}
+            {chipRow(AVAILABILITY_OPTIONS, filters.availability, (v) => set("availability", v))}
+            {chipRow(EXPERIENCE_OPTIONS, filters.experience, (v) => set("experience", v))}
+            {chipRow(RATING_OPTIONS, filters.rating, (v) => set("rating", v))}
+            {chipRow(SORT_OPTIONS, filters.sort, (v) => set("sort", v))}
+          </View>
+        )}
 
-      {loading ? (
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-          <ActivityIndicator color={pink} size="large" />
+        <View style={[s.countRow, s.padH]}>
+          <Text style={{ color: colors.textMuted, fontSize: 13 }}>
+            {visible.length} specialist{visible.length === 1 ? "" : "s"}
+          </Text>
+          {active && (
+            <Pressable onPress={() => setFilters(initialFilters)}>
+              <Text style={{ color: accent, fontWeight: "700", fontSize: 13 }}>Clear filters</Text>
+            </Pressable>
+          )}
         </View>
-      ) : (
-        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 110 }}>
 
-          {/* ── Filter pills ── */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={s.filtersRow}>
-            {FILTERS.map((f) => {
-              const active = f.value === activeFilter;
-              return (
-                <Pressable
-                  key={f.value}
-                  onPress={() => { setActiveFilter(f.value); setLoading(true); }}
-                  style={[s.pill, active ? { backgroundColor: pink, borderColor: pink } : { backgroundColor: "transparent", borderColor: colors.border }]}
-                >
-                  <Text style={[s.pillText, { color: active ? "#fff" : colors.textMuted }]}>{f.label}</Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-
-          {/* ── Ad banner (F1) ── */}
-          <View style={s.padH}>
-            <AdBanner placement="help_screen" />
-          </View>
-
-          {/* ── Section header ── */}
-          <View style={s.sectionRow}>
-            <Text style={[s.sectionLabel, { color: colors.text }]}>VERIFIED SPECIALISTS</Text>
-            <Text style={[s.foundText, { color: pink }]}>{doctors.length} Found</Text>
-          </View>
-
-          {/* ── Doctor cards ── */}
-          <View style={s.padH}>
-            {!doctors.length ? (
-              <Text style={{ color: colors.textMuted, fontSize: 13, textAlign: "center", paddingVertical: 24 }}>
-                No doctors match your search right now.
-              </Text>
-            ) : (
-              doctors.map((doc) => (
-                <Pressable
-                  key={doc._id}
-                  style={[s.docCard, { backgroundColor: colors.surface }]}
-                  onPress={() => router.push(`/doctor/${doc.user._id}`)}
-                >
-                  <View style={[s.avatarWrap, { backgroundColor: pinkLite }]}>
-                    <Text style={s.avatarEmoji}>👩‍⚕️</Text>
+        <View style={s.padH}>
+          {loading ? (
+            <ActivityIndicator color={accent} size="large" style={{ marginTop: 40 }} />
+          ) : error && !doctors.length ? (
+            <Pressable onPress={() => void load()} style={[s.empty, { borderColor: colors.border }]}>
+              <Text style={{ color: colors.danger, fontSize: 13, textAlign: "center" }}>{error}</Text>
+              <Text style={{ color: accent, fontWeight: "700", marginTop: 6 }}>Tap to try again</Text>
+            </Pressable>
+          ) : (
+            <>
+              {yourDoctors.length > 0 && (
+                <View style={{ marginBottom: 8 }}>
+                  <Text style={[s.sectionTitle, { color: colors.text }]}>Your doctors</Text>
+                  <Text style={[s.sectionSub, { color: colors.textMuted }]}>Specialists you've booked a consultation with.</Text>
+                  <View style={s.grid}>
+                    {yourDoctors.map((doctor) => (
+                      <DoctorGridCard key={doctor.id} doctor={doctor} width={cardWidth} consultation={mine.get(doctor.id)} onPress={() => open(doctor)} />
+                    ))}
                   </View>
+                  {others.length > 0 && <Text style={[s.sectionTitle, { color: colors.text, marginTop: 10, marginBottom: 12 }]}>All specialists</Text>}
+                </View>
+              )}
 
-                  <View style={s.docInfo}>
-                    <View style={s.nameRow}>
-                      <Text style={[s.docName, { color: colors.text }]} numberOfLines={1}>
-                        {doc.user.name || "Doctor"}
-                      </Text>
-                      {doc.reviewCount > 0 && (
-                        <View style={s.ratingWrap}>
-                          <StarIcon color="#f59e0b" />
-                          <Text style={s.ratingText}>{doc.avgRating.toFixed(1)}</Text>
-                        </View>
-                      )}
-                    </View>
-
-                    <Text style={[s.docRole, { color: colors.textMuted }]}>
-                      {doc.specialization || "Gynecology"}{doc.experienceYears ? ` · ${doc.experienceYears} yrs exp` : ""}
-                    </Text>
-
-                    <View style={s.tagsRow}>
-                      {doc.consultationTypes?.includes("online") && (
-                        <View style={[s.tag, { backgroundColor: tealLite }]}>
-                          <Text style={[s.tagText, { color: teal }]}>Online</Text>
-                        </View>
-                      )}
-                      {doc.languages?.slice(0, 2).map((lang) => (
-                        <View key={lang} style={[s.tag, { backgroundColor: pinkLite }]}>
-                          <Text style={[s.tagText, { color: pink }]}>{lang}</Text>
-                        </View>
+              {visible.length === 0 ? (
+                <View style={[s.empty, { borderColor: colors.border }]}>
+                  <Stethoscope size={28} color={colors.textMuted} />
+                  <Text style={{ color: colors.text, fontWeight: "800", marginTop: 10 }}>No specialists match</Text>
+                  <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 4 }}>Try removing a filter to see more doctors.</Text>
+                </View>
+              ) : (
+                // Two cards a row (three on wide screens), with an ad between
+                // groups of full rows.
+                feedGroups.map((group, i) => (
+                  <Fragment key={group[0]!.id}>
+                    <View style={s.grid}>
+                      {group.map((doctor) => (
+                        <DoctorGridCard key={doctor.id} doctor={doctor} width={cardWidth} consultation={mine.get(doctor.id)} onPress={() => open(doctor)} />
                       ))}
                     </View>
+                    {i < feedGroups.length - 1 && <AdBanner placement="doctors-feed" />}
+                  </Fragment>
+                ))
+              )}
+              {visible.length > 0 && visible.length < FEED_AD_FREQUENCY && <AdBanner placement="doctors-feed" />}
+            </>
+          )}
+        </View>
+      </ScrollView>
 
-                    <View style={s.priceRow}>
-                      <Text style={[s.price, { color: colors.text }]}>
-                        {doc.consultationFee ? `£${doc.consultationFee}` : "—"}
-                        <Text style={[s.perSession, { color: colors.textMuted }]}>/session</Text>
-                      </Text>
-                      <Pressable onPress={() => startChat(doc)} disabled={starting === doc.user._id}>
-                        {starting === doc.user._id ? (
-                          <ActivityIndicator color={pink} size="small" />
-                        ) : (
-                          <Text style={[s.chatNow, { color: pink }]}>Chat Now →</Text>
-                        )}
-                      </Pressable>
-                    </View>
-                  </View>
-                </Pressable>
-              ))
-            )}
-          </View>
-
-          {/* ── Privacy notice ── */}
-          <View style={[s.privacyCard, { backgroundColor: pinkLite, borderColor: `${pink}33` }]}>
-            <ShieldIcon color={pink} />
-            <View style={s.privacyText}>
-              <Text style={[s.privacyTitle, { color: pink }]}>Your Privacy is Protected</Text>
-              <Text style={[s.privacyBody, { color: colors.textMuted }]}>
-                Phone numbers, emails, and social media handles are automatically removed from chats and reviews for your safety.
-              </Text>
-            </View>
-          </View>
-
-        </ScrollView>
-      )}
-
-      {/* ── Notifications modal ── */}
+      {/* ── Notifications ── */}
       <Modal visible={notifOpen} animationType="slide" transparent onRequestClose={() => setNotifOpen(false)}>
         <Pressable style={m.backdrop} onPress={() => setNotifOpen(false)} />
         <View style={[m.sheet, { backgroundColor: colors.surface, maxHeight: "70%" }]}>
@@ -307,7 +313,7 @@ export default function HelpScreen() {
               <Text style={{ color: colors.textMuted, textAlign: "center", paddingVertical: 20 }}>No notifications yet.</Text>
             ) : (
               notifications.map((n) => (
-                <View key={n._id} style={[m.row, { borderBottomColor: colors.border }]}>
+                <View key={n.id} style={[m.row, { borderBottomColor: colors.border }]}>
                   <Text style={[m.rowTitle, { color: colors.text }]}>{n.title}</Text>
                   <Text style={{ color: colors.textMuted, fontSize: 13, marginTop: 2 }}>{n.body}</Text>
                 </View>
@@ -320,48 +326,29 @@ export default function HelpScreen() {
   );
 }
 
-// ── Styles ───────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
-  safe:  { flex: 1 },
-  padH:  { paddingHorizontal: 20 },
+  safe: { flex: 1 },
+  padH: { paddingHorizontal: 20 },
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: GRID_GAP, marginBottom: GRID_GAP },
+  topBar: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 20, paddingTop: 10 },
+  screenTitle: { fontSize: 24, fontWeight: "800" },
+  iconRow: { flexDirection: "row", gap: 7 },
+  iconBtn: { width: 40, height: 40, borderRadius: 13, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  badgeDot: { position: "absolute", top: 8, right: 9, width: 8, height: 8, borderRadius: 4, backgroundColor: "#ef4444" },
 
-  topBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingTop: 10, paddingBottom: 14 },
-  screenTitle: { fontSize: 22, fontWeight: "800" },
-  iconBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
-  bellWrap: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
-
-  searchBar: { flexDirection: "row", alignItems: "center", marginHorizontal: 20, marginBottom: 14, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 11, gap: 10 },
+  searchRow: { flexDirection: "row", gap: 8, marginTop: 16 },
+  searchBar: { flex: 1, flexDirection: "row", alignItems: "center", gap: 9, borderRadius: 16, borderWidth: 1, paddingHorizontal: 13, paddingVertical: 10 },
   searchInput: { flex: 1, fontSize: 14 },
+  filterBtn: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 16, borderWidth: 1, paddingHorizontal: 12 },
+  filterPanel: { marginTop: 12, gap: 8 },
+  chipRow: { paddingHorizontal: 20, gap: 7 },
+  pill: { paddingHorizontal: 13, paddingVertical: 7, borderRadius: 20, borderWidth: 1.5 },
+  pillText: { fontSize: 12.5, fontWeight: "600" },
 
-  filtersRow: { paddingHorizontal: 20, gap: 8, paddingBottom: 16 },
-  pill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1.5 },
-  pillText: { fontSize: 13, fontWeight: "600" },
-
-  sectionRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, marginBottom: 12 },
-  sectionLabel: { fontSize: 12, fontWeight: "800", letterSpacing: 0.8 },
-  foundText: { fontSize: 13, fontWeight: "700" },
-
-  docCard: { flexDirection: "row", borderRadius: 18, padding: 14, marginBottom: 14, gap: 14, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
-  avatarWrap: { width: 68, height: 68, borderRadius: 14, alignItems: "center", justifyContent: "center", flexShrink: 0 },
-  avatarEmoji: { fontSize: 32 },
-  docInfo: { flex: 1 },
-  nameRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 2 },
-  docName: { fontSize: 15, fontWeight: "800", flex: 1, marginRight: 6 },
-  ratingWrap: { flexDirection: "row", alignItems: "center", gap: 3 },
-  ratingText: { fontSize: 13, fontWeight: "700", color: "#f59e0b" },
-  docRole: { fontSize: 12, marginBottom: 8 },
-  tagsRow: { flexDirection: "row", gap: 6, marginBottom: 10, flexWrap: "wrap" },
-  tag: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  tagText: { fontSize: 11, fontWeight: "700" },
-  priceRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  price: { fontSize: 15, fontWeight: "800" },
-  perSession: { fontSize: 12, fontWeight: "400" },
-  chatNow: { fontSize: 14, fontWeight: "800" },
-
-  privacyCard: { flexDirection: "row", marginHorizontal: 20, marginTop: 4, borderRadius: 16, padding: 16, borderWidth: 1, gap: 14, alignItems: "flex-start" },
-  privacyText: { flex: 1 },
-  privacyTitle: { fontSize: 14, fontWeight: "800", marginBottom: 4 },
-  privacyBody: { fontSize: 12, lineHeight: 18 },
+  countRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 16, marginBottom: 12 },
+  sectionTitle: { fontSize: 19, fontWeight: "800" },
+  sectionSub: { fontSize: 13, marginTop: 2, marginBottom: 12 },
+  empty: { alignItems: "center", borderWidth: 1, borderStyle: "dashed", borderRadius: 20, paddingVertical: 34, paddingHorizontal: 20, marginTop: 6 },
 });
 
 const m = StyleSheet.create({

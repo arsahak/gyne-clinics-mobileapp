@@ -1,5 +1,8 @@
-import { api } from "@/lib/api";
-import { useAuth } from "@/store/AuthContext";
+import { acceptConsent } from "@/lib/services/auth";
+import { savePatientProfile } from "@/lib/services/patient";
+import type { PregnancyStatus } from "@/lib/types";
+import { routeForAccount, useAuth } from "@/store/AuthContext";
+import { format } from "date-fns";
 import { useTheme } from "@/theme";
 import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { useRouter } from "expo-router";
@@ -56,28 +59,29 @@ function ShieldIcon({ color }: { color: string }) {
 const CYCLE_LENGTHS    = ["21", "24", "26", "28", "30", "32", "35", "40+"];
 const PERIOD_DURATIONS = ["2", "3", "4", "5", "6", "7", "8+"];
 const PREGNANCY_LABELS = ["Not Pregnant", "Pregnant", "Postpartum", "Trying to Conceive"];
-const PREGNANCY_VALUE: Record<string, string> = {
+const PREGNANCY_VALUE: Record<string, PregnancyStatus> = {
   "Not Pregnant": "not_pregnant",
   "Pregnant": "pregnant",
   "Postpartum": "postpartum",
-  "Trying to Conceive": "trying_to_conceive",
+  "Trying to Conceive": "trying",
 };
 const STEPS = ["Personal", "Cycle", "Consent"];
 
-function calcAge(dob: Date): number {
-  const diffMs = Date.now() - dob.getTime();
-  return Math.floor(diffMs / (365.25 * 24 * 60 * 60 * 1000));
-}
+/** "40+" → 40. */
+const toDays = (value: string) => Number(value.replace(/\D/g, ""));
 
 // ── Date picker button ─────────────────────────────────────────────────────────
 function DatePickerField({
-  label, date, onDateChange, colors, pink,
+  label, date, onDateChange, colors, pink, minimumDate, maximumDate,
 }: {
   label: string;
   date: Date | null;
   onDateChange: (d: Date) => void;
   colors: any;
   pink: string;
+  /** Defaults suit a date of birth (at least 10 years ago). */
+  minimumDate?: Date;
+  maximumDate?: Date;
 }) {
   const [show, setShow] = useState(false);
 
@@ -90,8 +94,11 @@ function DatePickerField({
     if (selected) onDateChange(selected);
   };
 
-  const maxDate = new Date();
-  maxDate.setFullYear(maxDate.getFullYear() - 10);
+  const tenYearsAgo = new Date();
+  tenYearsAgo.setFullYear(tenYearsAgo.getFullYear() - 10);
+  const maxDate = maximumDate ?? (minimumDate ? undefined : tenYearsAgo);
+  // Where the picker opens: the chosen date, else today (for limited ranges) or 1995 (date of birth).
+  const start = date ?? minimumDate ?? (maximumDate ? new Date() : new Date(1995, 0, 1));
 
   return (
     <View style={{ marginBottom: 16 }}>
@@ -125,10 +132,11 @@ function DatePickerField({
             <View style={[fS.modalHandle, { backgroundColor: colors.border }]} />
             <Text style={[fS.modalTitle, { color: colors.text }]}>{label}</Text>
             <DateTimePicker
-              value={date ?? new Date(1995, 0, 1)}
+              value={start}
               mode="date"
               display="spinner"
               onChange={handleChange}
+              minimumDate={minimumDate}
               maximumDate={maxDate}
               textColor={colors.text}
             />
@@ -145,10 +153,11 @@ function DatePickerField({
       {/* Android — native inline */}
       {Platform.OS === "android" && show && (
         <DateTimePicker
-          value={date ?? new Date(1995, 0, 1)}
+          value={start}
           mode="date"
           display="default"
           onChange={handleChange}
+          minimumDate={minimumDate}
           maximumDate={maxDate}
         />
       )}
@@ -228,12 +237,14 @@ function PillSelect({
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function HealthProfileScreen() {
   const { colors }          = useTheme();
-  const { completeProfile, token } = useAuth();
+  const { account, setAccount } = useAuth();
   const router              = useRouter();
   const pink     = colors.primary;
   const pinkLite = colors.primaryLight;
 
-  const [step, setStep] = useState(0);
+  // Profile saved (e.g. on the webapp) but consent not given yet: only the consent step is left.
+  const consentOnly = account?.nextStep === "consent";
+  const [step, setStep] = useState(consentOnly ? 2 : 0);
   const [submitting, setSubmitting] = useState(false);
 
   // Personal
@@ -247,49 +258,53 @@ export default function HealthProfileScreen() {
   const [periodLen,       setPeriodLen]       = useState("5");
   const [lastPeriod,      setLastPeriod]      = useState<Date | null>(null);
   const [pregnancyLabel,  setPregnancyLabel]  = useState("Not Pregnant");
+  const [dueDate,         setDueDate]         = useState<Date | null>(null);
 
   // Consent (A5 — mandatory before accessing health features)
   const [consentAccepted, setConsentAccepted] = useState(false);
 
   const canNext = [
     name.trim().length > 1 && dob !== null && heightCm.trim() !== "" && weightKg.trim() !== "",
-    cycleLen !== "" && periodLen !== "",
+    cycleLen !== "" && periodLen !== "" && (pregnancyLabel !== "Pregnant" || dueDate !== null),
     consentAccepted,
   ][step];
 
   const back = () => setStep((s) => s - 1);
 
   const submitProfile = async () => {
-    if (!dob || submitting) return;
+    if (submitting) return;
+    if (!consentOnly && !dob) return;
     setSubmitting(true);
 
-    const result = await api("/api/patients/me", {
-      method: "PUT",
-      token: token ?? undefined,
-      body: {
-        name,
-        age: calcAge(dob),
+    if (!consentOnly) {
+      const pregnancyStatus = PREGNANCY_VALUE[pregnancyLabel] ?? "not_pregnant";
+      const saved = await savePatientProfile({
+        fullName: name.trim(),
+        dateOfBirth: format(dob!, "yyyy-MM-dd"),
         heightCm: Number(heightCm),
         weightKg: Number(weightKg),
-        menstrualHistory: {
-          lastPeriodDate: lastPeriod ? lastPeriod.toISOString() : undefined,
-          cycleLengthDays: Number(cycleLen.replace(/\D/g, "")),
-          periodLengthDays: Number(periodLen.replace(/\D/g, "")),
-        },
-        pregnancyStatus: PREGNANCY_VALUE[pregnancyLabel],
-        consentAccepted: true,
-      },
-    });
-
-    setSubmitting(false);
-
-    if (!result.ok) {
-      Alert.alert("Couldn't save profile", result.message);
-      return;
+        typicalCycleLength: toDays(cycleLen),
+        typicalPeriodLength: toDays(periodLen),
+        lastPeriodStart: lastPeriod ? format(lastPeriod, "yyyy-MM-dd") : "",
+        pregnancyStatus,
+        dueDate: pregnancyStatus === "pregnant" && dueDate ? format(dueDate, "yyyy-MM-dd") : undefined,
+      });
+      if (!saved.ok) {
+        setSubmitting(false);
+        Alert.alert("Couldn't save profile", saved.message);
+        return;
+      }
     }
 
-    await completeProfile();
-    router.replace("/(tabs)");
+    // The disclaimer and data consent are recorded on the account.
+    const consented = await acceptConsent();
+    setSubmitting(false);
+    if (!consented.ok) {
+      Alert.alert("Couldn't save your consent", consented.message);
+      return;
+    }
+    await setAccount(consented.data);
+    router.replace(routeForAccount(consented.data));
   };
 
   const next = () => {
@@ -303,7 +318,7 @@ export default function HealthProfileScreen() {
 
         {/* ── Top bar — back + title only ── */}
         <View style={[s.topBar, { borderBottomColor: colors.border }]}>
-          {step > 0 ? (
+          {step > 0 && !consentOnly ? (
             <Pressable onPress={back} style={s.backBtn}>
               <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
                 <Path d="M15 18l-6-6 6-6" stroke={colors.text} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
@@ -366,11 +381,23 @@ export default function HealthProfileScreen() {
                 onDateChange={setLastPeriod}
                 colors={colors}
                 pink={pink}
+                maximumDate={new Date()}
               />
 
               <Text style={[fS.label, { color: colors.text }]}>Pregnancy Status</Text>
               <PillSelect options={PREGNANCY_LABELS} value={pregnancyLabel} onChange={setPregnancyLabel}
                 pink={pink} pinkLite={pinkLite} colors={colors} />
+
+              {pregnancyLabel === "Pregnant" && (
+                <DatePickerField
+                  label="Estimated Due Date"
+                  date={dueDate}
+                  onDateChange={setDueDate}
+                  colors={colors}
+                  pink={pink}
+                  minimumDate={new Date()}
+                />
+              )}
             </>
           )}
 

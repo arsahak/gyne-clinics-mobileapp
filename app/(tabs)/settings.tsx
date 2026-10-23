@@ -1,12 +1,15 @@
 import { Text } from "@/components";
 import { config } from "@/constants/config";
-import { api } from "@/lib/api";
+import { deleteAccount } from "@/lib/services/auth";
+import { getTracker, saveReminders } from "@/lib/services/patient";
 import { useAuth } from "@/store/AuthContext";
+import { differenceInYears, parseISO } from "date-fns";
 import { useTheme } from "@/theme";
 import { useFocusEffect, useRouter } from "expo-router";
 import {
   BadgeCheck,
   Baby,
+  CalendarCheck,
   Bell,
   BellOff,
   BellRing,
@@ -24,6 +27,8 @@ import {
   Smartphone,
   Sparkles,
   Sun,
+  Trash2,
+  Video,
 } from "lucide-react-native";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -47,7 +52,7 @@ type PatientProfile = {
     | "not_pregnant"
     | "pregnant"
     | "postpartum"
-    | "trying_to_conceive";
+    | "trying";
   remindersEnabled: boolean;
   profileCompleted: boolean;
   account?: {
@@ -66,7 +71,7 @@ const PREGNANCY_LABELS: Record<
   not_pregnant: "Not pregnant",
   pregnant: "Pregnant",
   postpartum: "Postpartum",
-  trying_to_conceive: "Trying to conceive",
+  trying: "Trying to conceive",
 };
 
 const CARE_STATUS_COPY: Record<
@@ -85,7 +90,7 @@ const CARE_STATUS_COPY: Record<
     title: "Postpartum",
     description: "Your profile reflects your postpartum recovery journey.",
   },
-  trying_to_conceive: {
+  trying: {
     title: "Trying to conceive",
     description: "Your cycle information can support conception planning.",
   },
@@ -104,7 +109,7 @@ function initials(name?: string) {
 
 export default function SettingsScreen() {
   const { colors, setMode, mode } = useTheme();
-  const { logout, token, phone } = useAuth();
+  const { logout, phone, refresh } = useAuth();
   const router = useRouter();
   const [profile, setProfile] = useState<PatientProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -112,20 +117,32 @@ export default function SettingsScreen() {
   const [savingReminders, setSavingReminders] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
 
+  // The account (refreshed from the backend, so webapp edits show here too)
+  // plus reminders and the newest logged weight from the tracker.
   const loadProfile = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const result = await api<{ success: boolean; data: PatientProfile }>(
-      "/api/patients/me",
-      { token: token ?? undefined },
-    );
-    if (result.ok) {
-      setProfile(result.data.data);
+    const [account, tracker] = await Promise.all([refresh(), getTracker()]);
+    const patient = account?.patient;
+    if (account && patient) {
+      const latestWeight = tracker.ok ? [...tracker.data.weights].sort((a, b) => b.date.localeCompare(a.date))[0]?.kg : undefined;
+      setProfile({
+        _id: account.id,
+        age: patient.dateOfBirth ? differenceInYears(new Date(), parseISO(patient.dateOfBirth)) : undefined,
+        heightCm: patient.heightCm || undefined,
+        weightKg: latestWeight ?? (patient.weightKg || undefined),
+        pregnancyStatus: patient.pregnancyStatus,
+        remindersEnabled: tracker.ok ? tracker.data.reminders.periodReminder : true,
+        profileCompleted: true,
+        account: { name: account.fullName, phone: account.phone, avatar: account.avatar || undefined, isVerified: true },
+      });
       setAvatarFailed(false);
+    } else {
+      setError(tracker.ok ? "Your profile isn't set up yet." : tracker.message);
     }
-    else setError(result.message);
     setLoading(false);
-  }, [token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -156,14 +173,7 @@ export default function SettingsScreen() {
     const previous = profile.remindersEnabled;
     setProfile({ ...profile, remindersEnabled: enabled });
     setSavingReminders(true);
-    const result = await api<{
-      success: boolean;
-      data: { remindersEnabled: boolean };
-    }>("/api/patients/reminders", {
-      method: "PATCH",
-      token: token ?? undefined,
-      body: { enabled },
-    });
+    const result = await saveReminders({ periodReminder: enabled });
     setSavingReminders(false);
     if (!result.ok) {
       setProfile((current) =>
@@ -171,6 +181,29 @@ export default function SettingsScreen() {
       );
       Alert.alert("Couldn’t update reminders", result.message);
     }
+  };
+
+  const confirmDelete = () => {
+    Alert.alert(
+      "Delete your account?",
+      "Your profile, cycle log, chats and bookings are deleted permanently. This can’t be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            const result = await deleteAccount();
+            if (!result.ok) {
+              Alert.alert("Couldn’t delete your account", result.message);
+              return;
+            }
+            await logout();
+            router.replace("/login");
+          },
+        },
+      ],
+    );
   };
 
   const displayPhone = profile?.account?.phone || phone || "Phone unavailable";
@@ -423,6 +456,36 @@ export default function SettingsScreen() {
             </View>
           )}
           <View style={[s.rowDivider, { backgroundColor: colors.border }]} />
+          <Pressable style={s.menuRow} onPress={() => router.push("/consultations")}>
+            <View style={[s.menuIcon, { backgroundColor: colors.primaryLight }]}>
+              <CalendarCheck size={19} color={colors.primary} />
+            </View>
+            <View style={s.menuCopy}>
+              <Text variant="label" style={s.menuTitle}>
+                My consultations
+              </Text>
+              <Text variant="caption" color="textMuted">
+                Bookings and chats with your doctors
+              </Text>
+            </View>
+            <ChevronRight size={19} color={colors.textMuted} />
+          </Pressable>
+          <View style={[s.rowDivider, { backgroundColor: colors.border }]} />
+          <Pressable style={s.menuRow} onPress={() => router.push("/consultation/video-call")}>
+            <View style={[s.menuIcon, { backgroundColor: colors.tealLight }]}>
+              <Video size={19} color={colors.teal} />
+            </View>
+            <View style={s.menuCopy}>
+              <Text variant="label" style={s.menuTitle}>
+                Test video call
+              </Text>
+              <Text variant="caption" color="textMuted">
+                Check your camera and microphone
+              </Text>
+            </View>
+            <ChevronRight size={19} color={colors.textMuted} />
+          </Pressable>
+          <View style={[s.rowDivider, { backgroundColor: colors.border }]} />
           <Pressable
             style={s.menuRow}
             onPress={() => router.push("/(tabs)/help")}
@@ -496,6 +559,12 @@ export default function SettingsScreen() {
             Sign out
           </Text>
         </Pressable>
+        <Pressable onPress={confirmDelete} style={s.deleteRow} accessibilityRole="button">
+          <Trash2 size={15} color={colors.textMuted} />
+          <Text variant="caption" color="textMuted">
+            Delete account
+          </Text>
+        </Pressable>
         <Text
           variant="caption"
           color="textMuted"
@@ -543,12 +612,12 @@ function CareStatusCard({
   const isPostpartum = status === "postpartum";
   const accent = isPregnant
     ? colors.primary
-    : isPostpartum || status === "trying_to_conceive"
+    : isPostpartum || status === "trying"
       ? colors.secondary
       : colors.teal;
   const background = isPregnant
     ? colors.primaryLight
-    : isPostpartum || status === "trying_to_conceive"
+    : isPostpartum || status === "trying"
       ? colors.secondaryLight
       : colors.tealLight;
 
@@ -556,7 +625,7 @@ function CareStatusCard({
     <Baby size={23} color={accent} />
   ) : isPostpartum ? (
     <HeartHandshake size={23} color={accent} />
-  ) : status === "trying_to_conceive" ? (
+  ) : status === "trying" ? (
     <Sparkles size={23} color={accent} />
   ) : (
     <ShieldCheck size={23} color={accent} />
@@ -838,6 +907,7 @@ const s = StyleSheet.create({
     gap: 7,
   },
   modeText: { fontSize: 12, fontWeight: "700" },
+  deleteRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 14, paddingVertical: 6 },
   logoutButton: {
     flexDirection: "row",
     alignItems: "center",

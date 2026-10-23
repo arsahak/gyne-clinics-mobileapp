@@ -1,6 +1,7 @@
-import { DOCTOR_ACCENT } from "@/constants/theme";
+import { DOCTOR_ACCENT } from "@/constants/brand";
 import { api } from "@/lib/api";
-import { useAuth } from "@/store/AuthContext";
+import { acceptConsent } from "@/lib/services/auth";
+import { routeForAccount, useAuth } from "@/store/AuthContext";
 import { useTheme } from "@/theme";
 import { useRouter } from "expo-router";
 import { useState } from "react";
@@ -46,6 +47,47 @@ function ShieldIcon({ color }: { color: string }) {
 
 const STEPS = ["Professional", "Consent"];
 
+// Same choices as the webapp and the backend.
+const SPECIALIZATIONS = [
+  "General Gynaecology",
+  "Reproductive Medicine",
+  "Urogynaecology & Pelvic Health",
+  "Menopause & HRT",
+  "Pregnancy Care",
+  "Adolescent Gynaecology",
+  "Intimate Wellness",
+];
+
+/** "MBBS, MD" → ["MBBS", "MD"] */
+const splitList = (value: string) => value.split(",").map((v) => v.trim()).filter(Boolean);
+
+/** One choice from a short list, shown as chips. */
+function Chips({ label, options, value, onChange, colors, accent }: {
+  label: string; options: string[]; value: string; onChange: (v: string) => void; colors: any; accent: string;
+}) {
+  return (
+    <View style={{ marginBottom: 16 }}>
+      <Text style={[fS.label, { color: colors.text }]}>{label}</Text>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+        {options.map((option) => {
+          const on = option === value;
+          return (
+            <Pressable
+              key={option}
+              onPress={() => onChange(option)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: on }}
+              style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1.5, borderColor: on ? accent : colors.border, backgroundColor: on ? accent + "1A" : colors.surface }}
+            >
+              <Text style={{ fontSize: 13, fontWeight: on ? "700" : "500", color: on ? accent : colors.text }}>{option}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    </View>
+  );
+}
+
 // ── Reusable text input ────────────────────────────────────────────────────────
 function Field({
   label, value, onChangeText, placeholder, keyboardType, hint, colors, accent,
@@ -85,12 +127,14 @@ const fS = StyleSheet.create({
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function DoctorProfileScreen() {
   const { colors } = useTheme();
-  const { completeProfile, token } = useAuth();
+  const { account, setAccount } = useAuth();
   const router = useRouter();
   const accent     = DOCTOR_ACCENT;
   const accentLite = DOCTOR_ACCENT + "1A";
 
-  const [step, setStep] = useState(0);
+  // Profile saved (e.g. on the webapp) but consent not given yet: only the consent step is left.
+  const consentOnly = account?.nextStep === "consent";
+  const [step, setStep] = useState(consentOnly ? 1 : 0);
   const [submitting, setSubmitting] = useState(false);
 
   // Professional info
@@ -99,16 +143,26 @@ export default function DoctorProfileScreen() {
   const [specialization,     setSpecialization]     = useState("");
   const [experienceYears,    setExperienceYears]    = useState("");
   const [registrationNumber, setRegistrationNumber] = useState("");
+  const [title,              setTitle]              = useState("");
+  const [registrationBody,   setRegistrationBody]   = useState("");
+  const [city,               setCity]               = useState("");
+  const [languages,          setLanguages]          = useState("English");
+  const [feeGBP,             setFeeGBP]             = useState("");
 
   // Consent (A5-equivalent for doctors)
   const [consentAccepted, setConsentAccepted] = useState(false);
 
   const canNext = [
     name.trim().length > 1 &&
-      qualifications.trim().length > 0 &&
-      specialization.trim().length > 0 &&
+      title.trim().length > 1 &&
+      splitList(qualifications).length > 0 &&
+      SPECIALIZATIONS.includes(specialization) &&
       experienceYears.trim() !== "" &&
-      registrationNumber.trim().length > 0,
+      registrationNumber.trim().length > 2 &&
+      registrationBody.trim().length > 1 &&
+      city.trim().length > 1 &&
+      splitList(languages).length > 0 &&
+      feeGBP.trim() !== "" && Number(feeGBP) >= 0,
     consentAccepted,
   ][step];
 
@@ -118,28 +172,40 @@ export default function DoctorProfileScreen() {
     if (submitting) return;
     setSubmitting(true);
 
-    const result = await api("/api/doctors/me", {
-      method: "PUT",
-      token: token ?? undefined,
-      body: {
-        name,
-        qualifications: qualifications.split(",").map((q) => q.trim()).filter(Boolean),
-        specialization,
-        experienceYears: Number(experienceYears),
-        registrationNumber,
-        consentAccepted: true,
-      },
-    });
-
-    setSubmitting(false);
-
-    if (!result.ok) {
-      Alert.alert("Couldn't save profile", result.message);
-      return;
+    if (!consentOnly) {
+      // Mon–Fri 09:00–17:00 to start with; changed later under Schedule.
+      const result = await api("/doctors/me", {
+        method: "PUT",
+        body: {
+          fullName: name.trim(),
+          title: title.trim(),
+          specialization,
+          qualifications: splitList(qualifications),
+          experienceYears: Number(experienceYears),
+          registrationNumber: registrationNumber.trim(),
+          registrationBody: registrationBody.trim(),
+          city: city.trim(),
+          languages: splitList(languages),
+          feeGBP: Number(feeGBP),
+          schedule: { timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/London" },
+        },
+      });
+      if (!result.ok) {
+        setSubmitting(false);
+        Alert.alert("Couldn't save profile", result.message);
+        return;
+      }
     }
 
-    await completeProfile();
-    router.replace("/doctor-pending");
+    // Terms, privacy and credential checks are accepted on the account.
+    const consented = await acceptConsent();
+    setSubmitting(false);
+    if (!consented.ok) {
+      Alert.alert("Couldn't save your consent", consented.message);
+      return;
+    }
+    await setAccount(consented.data);
+    router.replace(routeForAccount(consented.data));
   };
 
   const next = () => {
@@ -153,7 +219,7 @@ export default function DoctorProfileScreen() {
 
         {/* ── Top bar ── */}
         <View style={[s.topBar, { borderBottomColor: colors.border }]}>
-          {step > 0 ? (
+          {step > 0 && !consentOnly ? (
             <Pressable onPress={back} style={s.backBtn}>
               <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
                 <Path d="M15 18l-6-6 6-6" stroke={colors.text} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
@@ -185,19 +251,38 @@ export default function DoctorProfileScreen() {
               <Field label="Full Name" value={name} onChangeText={setName}
                 placeholder="e.g. Dr. Sarah Miller" colors={colors} accent={accent} />
 
+              <Field label="Job Title" value={title} onChangeText={setTitle}
+                placeholder="e.g. Consultant Gynaecologist" colors={colors} accent={accent} />
+
+              <Chips label="Specialization" options={SPECIALIZATIONS} value={specialization}
+                onChange={setSpecialization} colors={colors} accent={accent} />
+
               <Field label="Qualifications" value={qualifications} onChangeText={setQualifications}
                 placeholder="e.g. MBBS, MD (Gynecology)"
                 hint="Separate multiple qualifications with commas"
                 colors={colors} accent={accent} />
-
-              <Field label="Specialization" value={specialization} onChangeText={setSpecialization}
-                placeholder="e.g. Gynecology & Obstetrics" colors={colors} accent={accent} />
 
               <Field label="Years of Experience" value={experienceYears} onChangeText={setExperienceYears}
                 placeholder="e.g. 8" keyboardType="numeric" colors={colors} accent={accent} />
 
               <Field label="Medical Registration Number" value={registrationNumber} onChangeText={setRegistrationNumber}
                 placeholder="e.g. BMDC-A-12345" colors={colors} accent={accent} />
+
+              <Field label="Registration Body" value={registrationBody} onChangeText={setRegistrationBody}
+                placeholder="e.g. GMC, BMDC" colors={colors} accent={accent} />
+
+              <Field label="City" value={city} onChangeText={setCity}
+                placeholder="e.g. London" colors={colors} accent={accent} />
+
+              <Field label="Languages" value={languages} onChangeText={setLanguages}
+                placeholder="e.g. English, Bangla"
+                hint="Separate multiple languages with commas"
+                colors={colors} accent={accent} />
+
+              <Field label="Consultation Fee (GBP)" value={feeGBP} onChangeText={setFeeGBP}
+                placeholder="e.g. 45" keyboardType="numeric"
+                hint="UK & Europe price. Other regions adjust automatically. Enter 0 for free."
+                colors={colors} accent={accent} />
             </>
           )}
 

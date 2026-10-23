@@ -1,6 +1,5 @@
-import { DOCTOR_ACCENT } from "@/constants/theme";
-import { api } from "@/lib/api";
-import { useAuth } from "@/store/AuthContext";
+import { sendOtp, verifyOtp } from "@/lib/services/auth";
+import { routeForAccount, useAuth } from "@/store/AuthContext";
 import { useTheme } from "@/theme";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
@@ -16,7 +15,16 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import Svg, { Circle, Path } from "react-native-svg";
+import Svg, { Path } from "react-native-svg";
+import { parsePhoneNumberFromString } from "libphonenumber-js/mobile";
+import { AlertCircle, CheckCircle2, Clock, RotateCw } from "lucide-react-native";
+
+// Match the backend's OTP rules (backend/utils/phoneOtp.ts).
+const RESEND_SECONDS = 30;
+const EXPIRES_SECONDS = 10 * 60;
+
+/** 125 → "2:05" */
+const clock = (seconds: number) => `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 
 // ── Success overlay ───────────────────────────────────────────────────────────
 function SuccessOverlay({ visible, pink }: { visible: boolean; pink: string }) {
@@ -70,43 +78,41 @@ const so = StyleSheet.create({
   barFill:   { height: "100%", width: "100%", borderRadius: 2 },
 });
 
-type VerifyOtpResponse = {
-  success: boolean;
-  isNewUser: boolean;
-  profileCompleted: boolean;
-  approvalStatus?: string;
-  user: { _id: string; name?: string; phone: string; role: "patient" | "doctor"; isVerified: boolean };
-  accessToken: string;
-  tokenExpiresAt: number;
-  tokenExpiresIn: number;
-};
+const ERROR = "#ef4444";
+const WARN = "#d97706";
 
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function VerifyOtpScreen() {
   const { colors }  = useTheme();
-  const { login }   = useAuth();
+  const { signIn }  = useAuth();
   const router      = useRouter();
-  const { phone, role } = useLocalSearchParams<{ phone: string; role: "patient" | "doctor" }>();
+  const { phone } = useLocalSearchParams<{ phone: string }>();
 
-  const pink     = role === "doctor" ? DOCTOR_ACCENT : colors.primary;
-  const pinkLite = role === "doctor" ? DOCTOR_ACCENT + "1A" : colors.primaryLight;
+  const pink     = colors.primary;
+  const pinkLite = colors.primaryLight;
 
   const [digits,   setDigits]   = useState(["", "", "", "", "", ""]);
   const [status,   setStatus]   = useState<"idle" | "verifying" | "error" | "success">("idle");
-  const [resendT,  setResendT]  = useState(30);
+  const [errorMsg, setErrorMsg] = useState("");
   const [resending, setResending] = useState(false);
+  const [notice,   setNotice]   = useState("");
+
+  // Timers: when the code expires and when another can be sent.
+  const [expiresAt, setExpiresAt] = useState(() => Date.now() + EXPIRES_SECONDS * 1000);
+  const [resendAt,  setResendAt]  = useState(() => Date.now() + RESEND_SECONDS * 1000);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  const expiresIn = Math.max(0, Math.ceil((expiresAt - now) / 1000));
+  const resendIn  = Math.max(0, Math.ceil((resendAt - now) / 1000));
+  const expired   = expiresIn === 0;
 
   // For shake animation on error
   const shakeX = useRef(new Animated.Value(0)).current;
 
   const refs = Array.from({ length: 6 }, () => useRef<TextInput>(null));
-
-  // Countdown
-  useEffect(() => {
-    if (resendT <= 0) return;
-    const t = setTimeout(() => setResendT(n => n - 1), 1000);
-    return () => clearTimeout(t);
-  }, [resendT]);
 
   const shake = () => {
     Animated.sequence([
@@ -119,7 +125,16 @@ export default function VerifyOtpScreen() {
   };
 
   const handleDigit = (val: string, idx: number) => {
-    const d = val.replace(/\D/g, "").slice(-1);
+    const nums = val.replace(/\D/g, "");
+    // Whole code pasted or AutoFilled from the SMS: fill every box and check it.
+    if (nums.length >= 6) {
+      const code = nums.slice(0, 6);
+      setDigits(code.split(""));
+      refs[5]?.current?.blur();
+      void handleVerify(code);
+      return;
+    }
+    const d = nums.slice(-1);
     const next = [...digits];
     next[idx] = d;
     setDigits(next);
@@ -138,76 +153,80 @@ export default function VerifyOtpScreen() {
 
   const allFilled = digits.every(d => d !== "");
 
-  const handleVerify = async () => {
-    if (!allFilled || status === "verifying" || status === "success") return;
-    const code = digits.join("");
+  const handleVerify = async (pasted?: string) => {
+    const code = pasted ?? digits.join("");
+    if (code.length < 6 || status === "verifying" || status === "success") return;
+
+    if (expired) {
+      setErrorMsg("This code has expired. Request a new one below.");
+      setStatus("error");
+      shake();
+      return;
+    }
 
     setStatus("verifying");
-    const result = await api<VerifyOtpResponse>("/api/auth/otp/verify", {
-      method: "POST",
-      body: { phone, code, role },
-    });
+    const result = await verifyOtp(phone, code);
 
     if (!result.ok) {
-      // Role/phone already registered under a different role — not a wrong-code
-      // problem, so don't shake the boxes; the code the user retries is fine.
-      if (result.status === 409) {
+      // Not an app account (e.g. a staff number) — not a wrong-code problem,
+      // so don't shake the boxes.
+      if (result.status === 403) {
         setStatus("idle");
-        Alert.alert("Account already exists", result.message, [
+        Alert.alert("Can't sign in here", result.message, [
           { text: "OK", onPress: () => router.replace("/login") },
         ]);
         return;
       }
 
+      // Keep the message until they type again; clear the boxes for a retry.
+      setErrorMsg(result.message || "Incorrect code. Please try again.");
       setStatus("error");
       shake();
       setTimeout(() => {
         setDigits(["", "", "", "", "", ""]);
-        setStatus("idle");
         refs[0]?.current?.focus();
       }, 400);
       return;
     }
 
-    const { accessToken, user, profileCompleted, approvalStatus } = result.data;
-
     setStatus("success");
-    await login({
-      accessToken,
-      role: user.role,
-      phone: user.phone,
-      profileCompleted,
-      approvalStatus,
-    });
-
-    setTimeout(() => {
-      if (user.role === "doctor") {
-        if (!profileCompleted) {
-          router.replace("/doctor-profile");
-        } else if (approvalStatus !== "approved") {
-          router.replace("/doctor-pending");
-        } else {
-          router.replace("/(doctor-tabs)/home");
-        }
-      } else {
-        router.replace(profileCompleted ? "/(tabs)" : "/health-profile");
-      }
-    }, 1500);
+    const verified = result.data;
+    if (verified.kind === "newUser") {
+      // New number: choose patient or doctor, then the account is created.
+      setTimeout(() => router.replace({ pathname: "/register", params: { phone: verified.phone, signupToken: verified.signupToken } }), 1500);
+      return;
+    }
+    await signIn(verified.session);
+    // Onboarding, consent, waiting for approval, or the app — as the backend says.
+    setTimeout(() => router.replace(routeForAccount(verified.session.account)), 1500);
   };
 
   const handleResend = async () => {
-    if (resendT > 0 || resending) return;
+    if (resendIn > 0 || resending) return;
     setResending(true);
-    const result = await api("/api/auth/otp/send", { method: "POST", body: { phone, role } });
+    const result = await sendOtp(phone);
     setResending(false);
-    if (result.ok) {
-      setResendT(30);
-      setDigits(["", "", "", "", "", ""]);
-      setStatus("idle");
+    if (!result.ok) {
+      Alert.alert("Couldn't send a new code", result.message);
+      return;
     }
+    const sentAt = Date.now();
+    setExpiresAt(sentAt + EXPIRES_SECONDS * 1000);
+    setResendAt(sentAt + RESEND_SECONDS * 1000);
+    setNow(sentAt);
+    setDigits(["", "", "", "", "", ""]);
+    setStatus("idle");
+    setNotice("New code sent");
+    setTimeout(() => setNotice(""), 4000);
+    refs[0]?.current?.focus();
   };
 
-  const maskedPhone = phone ? `${phone.slice(0, -4).replace(/\d/g, "*")}${phone.slice(-4)}` : "••• ••••";
+  // "+44 •••• 0101": the country code and last four digits only.
+  const maskedPhone = (() => {
+    if (!phone) return "your phone";
+    const code = parsePhoneNumberFromString(`+${phone.replace(/\D/g, "")}`)?.countryCallingCode;
+    return `${code ? `+${code} ` : ""}•••• ${phone.slice(-4)}`;
+  })();
 
   // Box border colour
   const boxBorderColor = (i: number) => {
@@ -256,14 +275,6 @@ export default function VerifyOtpScreen() {
             <Text style={{ color: pink, fontWeight: "700" }}>{maskedPhone}</Text>
           </Text>
 
-          {/* Test hint */}
-          <View style={[s.hintCard, { backgroundColor: pinkLite, borderColor: pink + "55" }]}>
-            <Text style={{ fontSize: 13 }}>🧪</Text>
-            <Text style={[s.hintText, { color: pink }]}>
-              Testing mode — use code: <Text style={{ fontWeight: "900" }}>123456</Text>
-            </Text>
-          </View>
-
           {/* OTP boxes with shake */}
           <Animated.View style={[s.boxRow, { transform: [{ translateX: shakeX }] }]}>
             {digits.map((d, i) => (
@@ -282,7 +293,10 @@ export default function VerifyOtpScreen() {
                 onChangeText={v => handleDigit(v, i)}
                 onKeyPress={({ nativeEvent }) => handleBackspace(nativeEvent.key, i)}
                 keyboardType="number-pad"
-                maxLength={1}
+                // The first box takes the code AutoFilled from the SMS.
+                textContentType={i === 0 ? "oneTimeCode" : "none"}
+                autoComplete={i === 0 ? "sms-otp" : "off"}
+                accessibilityLabel={`Digit ${i + 1} of 6`}
                 textAlign="center"
                 autoFocus={i === 0}
                 selectTextOnFocus
@@ -291,17 +305,29 @@ export default function VerifyOtpScreen() {
             ))}
           </Animated.View>
 
-          {/* Status message */}
-          {status === "error" && (
-            <View style={s.errorRow}>
-              <Circle cx="4" cy="4" r="4" fill="#ef4444" />
-              <Text style={s.errorText}>Incorrect code. Please try again.</Text>
+          {/* Error, or how long the code is valid for */}
+          {status === "error" ? (
+            <View style={s.statusRow}>
+              <AlertCircle size={15} color={ERROR} />
+              <Text style={[s.statusText, { color: ERROR }]}>{errorMsg}</Text>
+            </View>
+          ) : expired ? (
+            <View style={s.statusRow}>
+              <AlertCircle size={15} color={ERROR} />
+              <Text style={[s.statusText, { color: ERROR }]}>Code expired. Request a new one below.</Text>
+            </View>
+          ) : (
+            <View style={s.statusRow} accessibilityLiveRegion="none">
+              <Clock size={15} color={expiresIn <= 60 ? WARN : colors.textMuted} />
+              <Text style={[s.statusText, { color: expiresIn <= 60 ? WARN : colors.textMuted }]}>
+                Code expires in <Text style={s.timer}>{clock(expiresIn)}</Text>
+              </Text>
             </View>
           )}
 
           {/* Verify & Continue — ONLY navigates on correct code */}
           <Pressable
-            onPress={handleVerify}
+            onPress={() => void handleVerify()}
             disabled={!allFilled || status === "success" || status === "verifying"}
             style={[
               s.verifyBtn,
@@ -322,20 +348,31 @@ export default function VerifyOtpScreen() {
           </Pressable>
 
           {/* Resend */}
-          <View style={s.resendRow}>
-            <Text style={[s.resendLabel, { color: colors.textMuted }]}>
-              Didn't receive it?{"  "}
-            </Text>
-            {resendT > 0 ? (
-              <Text style={[s.resendTimer, { color: colors.textMuted }]}>
-                Resend in <Text style={{ fontWeight: "700" }}>{resendT}s</Text>
-              </Text>
-            ) : (
-              <Pressable onPress={handleResend} disabled={resending}>
-                <Text style={[s.resendLink, { color: pink }]}>
-                  {resending ? "Sending…" : "Resend Code"}
+          <View style={s.resendBlock}>
+            <Text style={[s.resendLabel, { color: colors.textMuted }]}>Didn't get the code?</Text>
+            {resendIn > 0 && !expired ? (
+              <View style={[s.resendBtn, { borderColor: colors.border }]}>
+                <RotateCw size={15} color={colors.textMuted} />
+                <Text style={[s.resendText, { color: colors.textMuted }]}>
+                  Resend in <Text style={s.timer}>{clock(resendIn)}</Text>
                 </Text>
+              </View>
+            ) : (
+              <Pressable
+                onPress={handleResend}
+                disabled={resending}
+                accessibilityRole="button"
+                style={({ pressed }) => [s.resendBtn, { borderColor: pink, backgroundColor: pinkLite, opacity: pressed || resending ? 0.7 : 1 }]}
+              >
+                <RotateCw size={15} color={pink} />
+                <Text style={[s.resendText, { color: pink }]}>{resending ? "Sending…" : "Resend code"}</Text>
               </Pressable>
+            )}
+            {notice !== "" && (
+              <View style={[s.statusRow, { marginTop: 10, marginBottom: 0 }]}>
+                <CheckCircle2 size={15} color="#10b981" />
+                <Text style={[s.statusText, { color: "#10b981" }]}>{notice}</Text>
+              </View>
             )}
           </View>
         </View>
@@ -353,10 +390,8 @@ const s = StyleSheet.create({
 
   iconRing: { width: 88, height: 88, borderRadius: 44, borderWidth: 12, alignItems: "center", justifyContent: "center", marginBottom: 24 },
   title:    { fontSize: 26, fontWeight: "900", letterSpacing: -0.3, marginBottom: 10, textAlign: "center" },
-  sub:      { fontSize: 15, lineHeight: 23, textAlign: "center", marginBottom: 22 },
+  sub:      { fontSize: 15, lineHeight: 23, textAlign: "center", marginBottom: 28 },
 
-  hintCard: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 12, borderWidth: 1.5, paddingHorizontal: 16, paddingVertical: 10, marginBottom: 28 },
-  hintText: { fontSize: 13, fontWeight: "600" },
 
   boxRow: { flexDirection: "row", gap: 10, marginBottom: 16 },
   box: {
@@ -364,14 +399,15 @@ const s = StyleSheet.create({
     borderWidth: 2, fontSize: 24, fontWeight: "900",
   },
 
-  errorRow:  { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 12 },
-  errorText: { fontSize: 13, color: "#ef4444", fontWeight: "600" },
+  statusRow:  { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 18 },
+  statusText: { fontSize: 13, fontWeight: "600", flexShrink: 1 },
+  timer:      { fontWeight: "800", fontVariant: ["tabular-nums"] },
 
   verifyBtn:     { width: "100%", borderRadius: 16, paddingVertical: 16, alignItems: "center", marginBottom: 22, marginTop: 4 },
   verifyBtnText: { color: "#fff", fontSize: 16, fontWeight: "800", letterSpacing: 0.2 },
 
-  resendRow:   { flexDirection: "row", alignItems: "center" },
+  resendBlock: { alignItems: "center", gap: 10 },
   resendLabel: { fontSize: 13 },
-  resendTimer: { fontSize: 13 },
-  resendLink:  { fontSize: 13, fontWeight: "800" },
+  resendBtn:   { flexDirection: "row", alignItems: "center", gap: 7, borderWidth: 1.5, borderRadius: 999, paddingHorizontal: 18, paddingVertical: 10 },
+  resendText:  { fontSize: 14, fontWeight: "800" },
 });

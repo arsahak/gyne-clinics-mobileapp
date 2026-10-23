@@ -8,7 +8,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#d13a8b"
     },
     "assetBundlePatterns": [
       "**/*"
@@ -33,7 +33,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#d13a8b"
         }
       ],
       "expo-asset",
@@ -43,7 +43,28 @@
           "photosPermission": "Allow GyneClinics to access your photos so you can choose a profile picture or attach an image.",
           "cameraPermission": "Allow GyneClinics to use your camera so you can take a profile picture."
         }
-      ]
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow GyneClinics to use your location so consultation pricing can be matched to your region."
+        }
+      ],
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "",
+          "enableGooglePay": false
+        }
+      ],
+      [
+        "@twilio/video-react-native-sdk",
+        {
+          "cameraPermission": "Allow GyneClinics to use your camera for video consultations with your doctor.",
+          "microphonePermission": "Allow GyneClinics to use your microphone for video consultations with your doctor."
+        }
+      ],
+      "expo-build-properties"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -53,7 +74,7 @@
       "router": {
         "origin": false
       },
-      "apiUrl": "http://localhost:5000"
+      "apiUrl": "http://localhost:8000"
     }
   }
 }

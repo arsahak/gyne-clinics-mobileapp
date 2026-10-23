@@ -1,5 +1,6 @@
-import { api } from "@/lib/api";
-import { useAuth } from "@/store/AuthContext";
+import { getArticle } from "@/lib/services/content";
+import { getBookmarks, setBookmark } from "@/lib/services/patient";
+import type { Article } from "@/lib/types";
 import { useTheme } from "@/theme";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
@@ -20,6 +21,26 @@ type Content = {
 };
 
 const FORMAT_EMOJI: Record<Content["format"], string> = { text: "📄", image: "🖼️", blog: "📝" };
+
+const escapeHtml = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/** An article (or community story) from the backend, as this screen draws it. */
+function toContent(a: Article): Content {
+  // Articles come as HTML from the admin editor; stories as plain paragraphs.
+  const html = a.html ?? a.sections
+      .map((section) => `${section.heading ? `<h3>${escapeHtml(section.heading)}</h3>` : ""}<p>${escapeHtml(section.body).replace(/\n/g, "<br/>")}</p>`)
+      .join("");
+  return {
+    _id: a.slug,
+    title: a.title,
+    body: html,
+    format: a.format === "blog" ? "blog" : a.format === "image" ? "image" : "text",
+    imageUrl: a.image,
+    category: a.category,
+    readTimeMinutes: a.readMinutes,
+    createdAt: a.publishedAt,
+  };
+}
 
 function BackIcon({ color }: { color: string }) {
   return (
@@ -47,7 +68,6 @@ function formatDate(iso: string) {
 
 export default function ContentDetailsScreen() {
   const { colors } = useTheme();
-  const { token } = useAuth();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { width } = useWindowDimensions();
@@ -64,32 +84,26 @@ export default function ContentDetailsScreen() {
       let active = true;
       (async () => {
         setLoading(true);
-        const [contentRes, bookmarksRes] = await Promise.all([
-          api<{ success: boolean; data: Content }>(`/api/content/${id}`, { token: token ?? undefined }),
-          api<{ success: boolean; data: { item: { _id: string } }[] }>("/api/patients/bookmarks", { token: token ?? undefined }),
-        ]);
+        // `id` is the article's slug ("community-<id>" for a story).
+        const [contentRes, bookmarksRes] = await Promise.all([getArticle(id), getBookmarks()]);
         if (!active) return;
         if (contentRes.ok) {
-          setContent(contentRes.data.data);
+          setContent(toContent(contentRes.data));
           setHeroImageFailed(false);
         } else {
           setNotFound(true);
         }
-        if (bookmarksRes.ok) {
-          setBookmarked(bookmarksRes.data.data.some((b) => b.item._id === id));
-        }
+        if (bookmarksRes.ok) setBookmarked(bookmarksRes.data.includes(id));
         setLoading(false);
       })();
       return () => { active = false; };
-    }, [id, token])
+    }, [id])
   );
 
   const toggleBookmark = async () => {
     const wasBookmarked = bookmarked;
     setBookmarked(!wasBookmarked);
-    const result = wasBookmarked
-      ? await api("/api/patients/bookmarks", { method: "DELETE", token: token ?? undefined, body: { targetType: "content", targetId: id } })
-      : await api("/api/patients/bookmarks", { method: "POST", token: token ?? undefined, body: { targetType: "content", targetId: id } });
+    const result = await setBookmark(id, !wasBookmarked);
     if (!result.ok) setBookmarked(wasBookmarked);
   };
 

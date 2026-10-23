@@ -1,15 +1,17 @@
+import { BRAND_GRADIENT } from "@/constants/brand";
+import { config } from "@/constants/config";
 import { COUNTRIES, Country, flagEmoji } from "@/constants/countries";
-import { DOCTOR_ACCENT } from "@/constants/theme";
-import { api } from "@/lib/api";
+import { checkMobile, defaultPhoneCountry, formatPhoneInput, phonePlaceholder } from "@/lib/phone";
+import { sendOtp } from "@/lib/services/auth";
 import { useTheme } from "@/theme";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Animated,
   FlatList,
   KeyboardAvoidingView,
+  Linking,
   Modal,
   Platform,
   Pressable,
@@ -19,35 +21,13 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import Svg, { Circle, Defs, Path, RadialGradient, Stop } from "react-native-svg";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
+import { StatusBar } from "expo-status-bar";
+import Svg, { Circle, Path } from "react-native-svg";
+import { LotusArt } from "@/components/brand/Lotus";
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
-function UserIcon({ color }: { color: string }) {
-  return (
-    <Svg width={13} height={13} viewBox="0 0 24 24" fill="none">
-      <Path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" stroke={color} strokeWidth={2.4} strokeLinecap="round" />
-      <Circle cx="12" cy="7" r="4" stroke={color} strokeWidth={2.4} />
-    </Svg>
-  );
-}
-function PhoneIcon({ color }: { color: string }) {
-  return (
-    <Svg width={17} height={17} viewBox="0 0 24 24" fill="none">
-      <Path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.85 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.77 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.74a16 16 0 0 0 5.55 5.55l1.1-1.1a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"
-        stroke={color} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
-    </Svg>
-  );
-}
-function DoctorIcon({ color }: { color: string }) {
-  return (
-    <Svg width={13} height={13} viewBox="0 0 24 24" fill="none">
-      <Path d="M5 3v6a4 4 0 0 0 8 0V3" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
-      <Path d="M9 13v2a5 5 0 0 0 10 0v-2.5" stroke={color} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round" />
-      <Circle cx="19" cy="12.5" r="1.8" stroke={color} strokeWidth={2.2} />
-    </Svg>
-  );
-}
 function ChevronDownIcon({ color }: { color: string }) {
   return (
     <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
@@ -72,58 +52,32 @@ function ShieldIcon({ color }: { color: string }) {
     </Svg>
   );
 }
-function HeartIcon({ color }: { color: string }) {
-  return (
-    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
-      <Path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"
-        stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"
-        fill={color} fillOpacity={0.18} />
-    </Svg>
-  );
-}
-function StarIcon({ color }: { color: string }) {
-  return (
-    <Svg width={18} height={18} viewBox="0 0 24 24" fill="none">
-      <Path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"
-        stroke={color} strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round"
-        fill={color} fillOpacity={0.18} />
-    </Svg>
+
+
+/** Opens a webapp page (terms, privacy) in the browser. */
+function openWeb(path: string) {
+  Linking.openURL(`${config.webUrl}${path}`).catch(() =>
+    Alert.alert("Couldn't open link", `Visit ${config.webUrl}${path}`),
   );
 }
 
-// ── Decorative blob ───────────────────────────────────────────────────────────
-function TopBlob({ pink }: { pink: string }) {
-  return (
-    <Svg width="100%" height={220} viewBox="0 0 390 220" style={StyleSheet.absoluteFillObject}>
-      <Defs>
-        <RadialGradient id="rg" cx="50%" cy="0%" rx="70%" ry="80%">
-          <Stop offset="0%" stopColor={pink} stopOpacity={0.22} />
-          <Stop offset="100%" stopColor={pink} stopOpacity={0} />
-        </RadialGradient>
-      </Defs>
-      <Path
-        d="M0 0 Q195 160 390 0 L390 220 L0 220 Z"
-        fill="url(#rg)"
-      />
-    </Svg>
-  );
-}
+const ERROR = "#e11d48";
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 export default function LoginScreen() {
   const { colors, isDark } = useTheme();
   const router   = useRouter();
+  const insets   = useSafeAreaInsets();
   const pink     = colors.primary;
-  const pinkLite = colors.primaryLight;
   const purple   = colors.secondary;
 
-  const [role,    setRole]    = useState<"patient" | "doctor">("patient");
   const [phone,   setPhone]   = useState("");
   const [agreed,  setAgreed]  = useState(false);
   const [focused, setFocused] = useState(false);
+  const [touched, setTouched] = useState(false);
 
-  // Country code picker
-  const [country, setCountry]       = useState<Country>(COUNTRIES[0]!);
+  // Country code picker (preselected from where the phone is)
+  const [country, setCountry]       = useState<Country>(defaultPhoneCountry);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [search, setSearch]         = useState("");
 
@@ -135,53 +89,36 @@ export default function LoginScreen() {
 
   const openPicker  = () => { setSearch(""); setPickerOpen(true); };
   const closePicker = () => setPickerOpen(false);
-  const pickCountry  = (c: Country) => { setCountry(c); closePicker(); };
-
-  // Sliding tab indicator: 0 = Patient, 1 = Doctor
-  const [tabBarWidth, setTabBarWidth] = useState(0);
-  const tabAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.spring(tabAnim, {
-      toValue: role === "doctor" ? 1 : 0,
-      useNativeDriver: false,
-      friction: 9,
-      tension: 80,
-    }).start();
-  }, [role]);
-
-  const tabPad     = 4;
-  const tabGap     = 4;
-  const pillWidth  = tabBarWidth > 0 ? (tabBarWidth - tabPad * 2 - tabGap) / 2 : 0;
-  const tabIndicatorStyle = {
-    width: pillWidth,
-    backgroundColor: tabAnim.interpolate({ inputRange: [0, 1], outputRange: [pink, DOCTOR_ACCENT] }),
-    transform: [{ translateX: tabAnim.interpolate({ inputRange: [0, 1], outputRange: [0, pillWidth + tabGap] }) }],
+  const pickCountry  = (c: Country) => {
+    setCountry(c);
+    setPhone(p => formatPhoneInput(p, "", c.iso2).text);
+    closePicker();
   };
 
-  // Whole-page accent: pink for Patient, teal for Doctor
-  const accent     = role === "doctor" ? DOCTOR_ACCENT : pink;
-  const accentLite = role === "doctor" ? DOCTOR_ACCENT + "1A" : pinkLite;
+  const onPhoneChange = (text: string) => {
+    const next = formatPhoneInput(text, phone, country.iso2);
+    if (next.country) setCountry(next.country);
+    setPhone(next.text);
+  };
 
-  const valid     = phone.trim().length >= 7;
-  const canSubmit = valid && agreed;
+  // One sign-in for everyone, like the webapp: patient or doctor is chosen
+  // only when a new number creates an account (register screen).
+  const accent     = pink;
+
+  const placeholder = useMemo(() => phonePlaceholder(country.iso2), [country.iso2]);
+  const check       = useMemo(() => checkMobile(phone, country.iso2), [phone, country.iso2]);
+  const valid       = check.valid;
+  const showError   = touched && !focused && phone.length > 0 && !valid;
+  const canSubmit   = valid && agreed;
 
   const [sending, setSending] = useState(false);
-
-  const toE164 = (dialCode: string, local: string) => {
-    const digits = local.replace(/\D/g, "").replace(/^0+/, "");
-    return `${dialCode}${digits}`;
-  };
 
   const handleContinue = async () => {
     if (!canSubmit || sending) return;
 
-    const e164Phone = toE164(country.dial, phone);
+    if (!check.e164) return;
     setSending(true);
-    const result = await api("/api/auth/otp/send", {
-      method: "POST",
-      body: { phone: e164Phone, role },
-    });
+    const result = await sendOtp(check.e164);
     setSending(false);
 
     if (!result.ok) {
@@ -189,11 +126,13 @@ export default function LoginScreen() {
       return;
     }
 
-    router.push({ pathname: "/verify-otp", params: { phone: e164Phone, role } });
+    router.push({ pathname: "/verify-otp", params: { phone: result.data.phone } });
   };
 
   return (
-    <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]}>
+    <SafeAreaView edges={["bottom"]} style={[s.safe, { backgroundColor: colors.background }]}>
+      {/* Light status bar text on the pink hero. */}
+      <StatusBar style="light" />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <ScrollView
           contentContainerStyle={s.scroll}
@@ -201,94 +140,107 @@ export default function LoginScreen() {
           keyboardShouldPersistTaps="handled"
         >
 
-          {/* ── Top hero area ── */}
-          <View style={s.hero}>
-            <TopBlob pink={accent} />
+          {/* ── Brand hero ── */}
+          <LinearGradient
+            colors={BRAND_GRADIENT}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={[s.hero, { paddingTop: insets.top + 22 }]}
+          >
+            <View style={[s.glow, { top: -70, right: -60, width: 220, height: 220 }]} pointerEvents="none" />
+            <View style={[s.glow, { bottom: 10, left: -80, width: 180, height: 180, opacity: 0.6 }]} pointerEvents="none" />
 
-            {/* floating decorative icons */}
-            <View style={[s.floatBubble, s.floatTL, { backgroundColor: accentLite, borderColor: accent + "33" }]}>
-              <HeartIcon color={accent} />
-            </View>
-            <View style={[s.floatBubble, s.floatTR, { backgroundColor: accentLite, borderColor: accent + "33" }]}>
-              <StarIcon color={accent} />
+            {/* Lotus art above the headline */}
+            <View style={s.art}>
+              <LotusArt />
             </View>
 
-            {/* centre avatar ring */}
-            <View style={[s.avatarRing, { borderColor: accent + "40", backgroundColor: accentLite }]}>
-              <View style={[s.avatarInner, { backgroundColor: accent }]}>
-                <UserIcon color="#fff" />
-              </View>
-            </View>
-          </View>
+            <Text style={s.heroTitle}>Women's health,{"\n"}in your pocket.</Text>
+            <Text style={s.heroText}>Track your cycle and talk to verified doctors.</Text>
+          </LinearGradient>
 
           {/* ── Card form ── */}
           <View style={[s.card, {
             backgroundColor: colors.surface,
+            borderColor: colors.border,
             shadowColor: isDark ? "#000" : accent,
           }]}>
 
             {/* Welcome heading */}
-            <Text style={[s.title, { color: colors.text }]}>Welcome Back 👋</Text>
+            <Text style={[s.title, { color: colors.text }]}>Welcome 👋</Text>
             <Text style={[s.subtitle, { color: colors.textMuted }]}>
-              {role === "doctor"
-                ? "Enter your mobile number to securely access your clinic dashboard."
-                : "Enter your mobile number to securely access your health records."}
+              Sign in or create an account with your mobile number. We'll send you a one-time code.
             </Text>
 
-            {/* Role tabs — Patient / Doctor */}
-            <View
-              style={[s.tabBar, { borderColor: colors.border, backgroundColor: colors.background }]}
-              onLayout={e => setTabBarWidth(e.nativeEvent.layout.width)}
-            >
-              {tabBarWidth > 0 && <Animated.View style={[s.tabIndicator, tabIndicatorStyle]} />}
-
-              <Pressable style={s.tabBtn} onPress={() => setRole("patient")}>
-                <UserIcon color={role === "patient" ? "#fff" : colors.textMuted} />
-                <Text style={[s.tabText, { color: role === "patient" ? "#fff" : colors.textMuted }]}>
-                  Patient
-                </Text>
-              </Pressable>
-              <Pressable style={s.tabBtn} onPress={() => setRole("doctor")}>
-                <DoctorIcon color={role === "doctor" ? "#fff" : colors.textMuted} />
-                <Text style={[s.tabText, { color: role === "doctor" ? "#fff" : colors.textMuted }]}>
-                  Doctor
-                </Text>
-              </Pressable>
-            </View>
-
             {/* Phone label */}
-            <Text style={[s.label, { color: colors.text }]}>Mobile Number</Text>
+            <Text style={[s.label, { color: colors.text }]}>Mobile number</Text>
 
             {/* Phone input */}
             <View style={[
               s.inputRow,
-              { borderColor: focused ? accent : colors.border, backgroundColor: colors.background },
+              { borderColor: showError ? ERROR : focused ? accent : colors.border, backgroundColor: colors.background },
               focused && { shadowColor: accent, shadowOpacity: 0.18, shadowRadius: 8, elevation: 3 },
             ]}>
-              <Pressable style={[s.prefixWrap, { borderRightColor: colors.border }]} onPress={openPicker}>
+              <Pressable
+                style={[s.prefixWrap, { borderRightColor: colors.border }]}
+                onPress={openPicker}
+                accessibilityRole="button"
+                accessibilityLabel={`Country code ${country.name} ${country.dial}. Change country`}
+                hitSlop={4}
+              >
                 <Text style={s.flag}>{flagEmoji(country.iso2)}</Text>
                 <Text style={[s.prefix, { color: focused ? accent : colors.text }]}>{country.dial}</Text>
                 <ChevronDownIcon color={colors.textMuted} />
               </Pressable>
               <TextInput
                 style={[s.phoneInput, { color: colors.text }]}
-                placeholder="Phone number"
+                placeholder={placeholder}
                 placeholderTextColor={colors.textMuted}
                 keyboardType="phone-pad"
+                textContentType="telephoneNumber"
+                autoComplete="tel"
+                autoCorrect={false}
+                maxLength={20}
+                selectionColor={accent}
+                accessibilityLabel="Mobile number"
                 value={phone}
-                onChangeText={setPhone}
+                onChangeText={onPhoneChange}
                 onFocus={() => setFocused(true)}
-                onBlur={() => setFocused(false)}
+                onBlur={() => { setFocused(false); setTouched(true); }}
                 returnKeyType="done"
                 onSubmitEditing={handleContinue}
               />
+              {!valid && phone.length > 0 && (
+                <Pressable
+                  onPress={() => { setPhone(""); setTouched(false); }}
+                  style={[s.clearBtn, { backgroundColor: colors.border }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear number"
+                  hitSlop={10}
+                >
+                  <Svg width={10} height={10} viewBox="0 0 24 24" fill="none">
+                    <Path d="M18 6L6 18M6 6l12 12" stroke={colors.textMuted} strokeWidth={3.2} strokeLinecap="round" />
+                  </Svg>
+                </Pressable>
+              )}
               {valid && (
-                <View style={s.validPill}>
-                  <View style={s.validDot} />
-                  <Text style={s.validText}>Valid</Text>
+                <View style={s.validIcon} accessibilityLabel="Valid number">
+                  <Svg width={12} height={12} viewBox="0 0 24 24" fill="none">
+                    <Path d="M20 6L9 17l-5-5" stroke="#fff" strokeWidth={3.2} strokeLinecap="round" strokeLinejoin="round" />
+                  </Svg>
                 </View>
               )}
             </View>
+
+            {/* Error or hint under the field */}
+            <Text
+              style={[s.hint, { color: showError ? ERROR : colors.textMuted }]}
+              accessibilityLiveRegion="polite"
+            >
+              {showError
+                ? `Enter a valid ${country.name} mobile number.`
+                : "We'll text you a 6-digit code. Standard SMS rates may apply."}
+            </Text>
 
             {/* Agree checkbox */}
             <Pressable style={s.checkRow} onPress={() => setAgreed(v => !v)}>
@@ -304,23 +256,11 @@ export default function LoginScreen() {
                 )}
               </View>
               <Text style={[s.checkText, { color: colors.textMuted }]}>
-                {role === "doctor" ? (
-                  <>
-                    I confirm my professional details are accurate and accept the{" "}
-                    <Text style={{ color: accent, fontWeight: "700" }}>Terms of Service</Text>
-                    {" "}and{" "}
-                    <Text style={{ color: accent, fontWeight: "700" }}>Privacy Policy</Text>
-                    , and consent to verification of my credentials.
-                  </>
-                ) : (
-                  <>
-                    I have read and accept the{" "}
-                    <Text style={{ color: accent, fontWeight: "700" }}>Medical Disclaimer</Text>
-                    {" "}and{" "}
-                    <Text style={{ color: accent, fontWeight: "700" }}>Privacy Policy</Text>
-                    , and consent to the collection and use of my health data for care and communication.
-                  </>
-                )}
+                I accept the{" "}
+                <Text style={[s.link, { color: accent }]} onPress={() => openWeb("/terms")}>Terms of Service</Text>
+                {" "}and{" "}
+                <Text style={[s.link, { color: accent }]} onPress={() => openWeb("/privacy")}>Privacy Policy</Text>
+                .
               </Text>
             </Pressable>
 
@@ -333,18 +273,15 @@ export default function LoginScreen() {
               {sending ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <>
-                  <PhoneIcon color="#fff" />
-                  <Text style={s.ctaText}>Get Verification Code</Text>
-                </>
+                <Text style={s.ctaText}>Continue</Text>
               )}
             </Pressable>
 
             {/* Secure badge */}
-            <View style={[s.secureBadge, { backgroundColor: colors.background, borderColor: colors.border }]}>
+            <View style={s.secureBadge}>
               <ShieldIcon color={purple} />
               <Text style={[s.secureText, { color: colors.textMuted }]}>
-                Encrypted in transit &amp; at rest
+                Your data is encrypted and private
               </Text>
             </View>
 
@@ -410,62 +347,32 @@ const s = StyleSheet.create({
 
   // ── Hero ──
   hero: {
-    height: 210,
-    alignItems: "center",
-    justifyContent: "flex-end",
-    paddingBottom: 28,
+    paddingHorizontal: 24,
+    paddingBottom: 70,
+    borderBottomLeftRadius: 36,
+    borderBottomRightRadius: 36,
     overflow: "hidden",
   },
-  floatBubble: {
-    position: "absolute",
-    width: 46, height: 46,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    alignItems: "center", justifyContent: "center",
-  },
-  floatTL: { top: 36, left: 28 },
-  floatTR: { top: 48, right: 28 },
-  avatarRing: {
-    width: 84, height: 84, borderRadius: 42,
-    borderWidth: 3,
-    alignItems: "center", justifyContent: "center",
-  },
-  avatarInner: {
-    width: 58, height: 58, borderRadius: 29,
-    alignItems: "center", justifyContent: "center",
-  },
+  glow: { position: "absolute", borderRadius: 999, backgroundColor: "rgba(255,255,255,0.13)" },
+  art: { alignSelf: "center", marginTop: 6 },
+  heroTitle: { color: "#fff", fontSize: 30, fontWeight: "900", lineHeight: 36, letterSpacing: -0.5, marginTop: 10, textAlign: "center" },
+  heroText: { color: "rgba(255,255,255,0.88)", fontSize: 14, lineHeight: 21, marginTop: 10, maxWidth: 330, textAlign: "center", alignSelf: "center" },
 
   // ── Card ──
   card: {
-    marginHorizontal: 20,
-    borderRadius: 24,
-    padding: 24,
+    marginHorizontal: 18,
+    marginTop: -46,
+    borderRadius: 26,
+    borderWidth: 1,
+    padding: 22,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.1,
     shadowRadius: 24,
     elevation: 6,
   },
 
-  title:    { fontSize: 28, fontWeight: "900", letterSpacing: -0.4, marginBottom: 6 },
+  title:    { fontSize: 24, fontWeight: "800", letterSpacing: -0.3, marginBottom: 4 },
   subtitle: { fontSize: 14, lineHeight: 22, marginBottom: 20 },
-
-  // Role tabs — Patient / Doctor
-  tabBar: {
-    flexDirection: "row", gap: 4,
-    borderRadius: 14, borderWidth: 1.5,
-    padding: 4, marginBottom: 22,
-  },
-  tabIndicator: {
-    position: "absolute",
-    top: 4, bottom: 4, left: 4,
-    borderRadius: 10,
-  },
-  tabBtn: {
-    flex: 1,
-    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-    paddingVertical: 10, borderRadius: 10,
-  },
-  tabText: { fontSize: 13, fontWeight: "800", letterSpacing: 0.3 },
 
   // Label
   label: { fontSize: 13, fontWeight: "700", marginBottom: 8 },
@@ -474,7 +381,7 @@ const s = StyleSheet.create({
   inputRow: {
     flexDirection: "row", alignItems: "center",
     borderRadius: 14, borderWidth: 1.5,
-    height: 56, marginBottom: 16,
+    height: 56, marginBottom: 8,
     overflow: "hidden",
     shadowOffset: { width: 0, height: 2 },
   },
@@ -486,19 +393,19 @@ const s = StyleSheet.create({
   },
   flag:       { fontSize: 18 },
   prefix:     { fontSize: 15, fontWeight: "700" },
-  phoneInput: { flex: 1, paddingHorizontal: 14, fontSize: 15 },
-  validPill: {
-    flexDirection: "row", alignItems: "center", gap: 5,
-    marginRight: 12, paddingHorizontal: 10, paddingVertical: 4,
-    borderRadius: 20, backgroundColor: "#d1fae5",
+  phoneInput: { flex: 1, paddingHorizontal: 14, fontSize: 16, letterSpacing: 0.3, height: "100%" },
+  clearBtn:   { width: 20, height: 20, borderRadius: 10, marginRight: 14, alignItems: "center", justifyContent: "center" },
+  hint:       { fontSize: 12, lineHeight: 17, marginBottom: 16, marginLeft: 2 },
+  validIcon: {
+    width: 22, height: 22, borderRadius: 11, marginRight: 14,
+    backgroundColor: "#10b981", alignItems: "center", justifyContent: "center",
   },
-  validDot:  { width: 6, height: 6, borderRadius: 3, backgroundColor: "#10b981" },
-  validText: { fontSize: 11, fontWeight: "700", color: "#059669" },
 
   // Checkbox
   checkRow:  { flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: 22 },
   checkbox:  { width: 22, height: 22, borderRadius: 7, borderWidth: 2, alignItems: "center", justifyContent: "center", marginTop: 1, flexShrink: 0 },
   checkText: { flex: 1, fontSize: 13, lineHeight: 20 },
+  link:      { fontWeight: "700", textDecorationLine: "underline" },
 
   // CTA
   ctaBtn: {
@@ -510,7 +417,6 @@ const s = StyleSheet.create({
   // Secure badge
   secureBadge: {
     flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8,
-    borderRadius: 12, borderWidth: 1, paddingVertical: 10, paddingHorizontal: 14,
   },
   secureText: { fontSize: 12, fontWeight: "600" },
 

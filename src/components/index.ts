@@ -1,8 +1,15 @@
-export * from "./AdBanner";
-export * from "./AppSplashScreen";
-export * from "./BottomNavBar";
-export * from "./Button";
-export * from "./Card";
-export * from "./NavIcon";
-export * from "./Screen";
-export * from "./Text";
+// Shared components, grouped like the webapp's component/ folder:
+//   ui/       basic building blocks (Text, Screen)
+//   layout/   app chrome (tab bar, splash)
+//   brand/    brand artwork (lotus)
+//   doctors/  doctor cards and pieces (import from "@/components/doctors")
+//   home/     home screen pieces
+//   shared/   used across features (ads)
+export * from "./ui/Text";
+export * from "./ui/Screen";
+export * from "./layout/BottomNavBar";
+export * from "./layout/NavIcon";
+export * from "./layout/AppSplashScreen";
+export * from "./brand/Lotus";
+export * from "./home/CycleRing";
+export * from "./shared/AdBanner";

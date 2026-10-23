@@ -1,67 +1,39 @@
 import { AdBanner } from "@/components";
-import { DOCTOR_ACCENT } from "@/constants/theme";
-import { api } from "@/lib/api";
+import { DOCTOR_ACCENT } from "@/constants/brand";
+import type { ChatSummary } from "@/lib/chat";
+import { timeline } from "@/lib/consultation";
+import { formatMoney } from "@/lib/locale/regions";
+import { getMyChats } from "@/lib/services/chats";
+import { getMyConsultations } from "@/lib/services/consultations";
+import { getDoctorReviews, getMyDoctor, setOnline } from "@/lib/services/doctors";
+import { type Earnings, getMyEarnings, getMyNotifications, markAllNotificationsRead } from "@/lib/services/misc";
+import type { Consultation, Review } from "@/lib/types";
+import type { InboxItem } from "@/lib/notifications";
 import { useAuth } from "@/store/AuthContext";
 import { useTheme } from "@/theme";
-import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import { isSameDay } from "date-fns";
 import { LinearGradient } from "expo-linear-gradient";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
   Image,
   Modal,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
-  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 
-// ─── types ──────────────────────────────────────────────────────────────────
-
-type AppointmentPatient = { _id: string; name?: string; phone?: string };
-type Appointment = {
-  _id: string;
-  patient: AppointmentPatient;
-  scheduledAt: string;
-  status: "scheduled" | "completed" | "cancelled";
-  reason?: string;
-  reviewed: boolean;
-};
-
-type ActivityItem = {
-  type: "appointment_completed" | "period_entry";
-  patientName: string;
-  createdAt: string;
-};
-
-type Notification = {
-  type: "new_submission" | "consultation_request" | "abnormal_cycle";
-  patientId: string;
-  patientName: string;
-  message: string;
-  createdAt: string;
-};
-
-type DashboardData = {
-  name: string | null;
-  avatar: string | null;
-  today: string;
-  totalAssignedPatients: number;
-  todaysAppointments: Appointment[];
-  upcomingAppointments: Appointment[];
-  completedAppointments: Appointment[];
-  recentActivity: ActivityItem[];
-  notifications: Notification[];
-  notificationCount: number;
-};
+// The doctor's day, from the backend (same data as the webapp's doctor
+// dashboard): consultations, patients waiting for a reply, earnings, the
+// latest review, and whether new chats are open.
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
@@ -88,56 +60,73 @@ function greeting() {
   if (h < 17) return "Good Afternoon,";
   return "Good Evening,";
 }
-
 function doctorName(name?: string | null) {
   return name?.trim().replace(/^dr\.?\s+/i, "") || "Doctor";
 }
-
+function minutesUntil(date: Date) {
+  return Math.round((date.getTime() - Date.now()) / 60_000);
+}
 function initials(name?: string | null) {
   const normalized = doctorName(name);
   if (normalized === "Doctor") return "DR";
   return normalized.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 }
 
-const NOTIF_ICON: Record<Notification["type"], string> = {
-  new_submission: "📋",
-  consultation_request: "📅",
-  abnormal_cycle: "⚠️",
+type Dashboard = {
+  consultations: Consultation[];
+  chats: ChatSummary[];
+  earnings: Earnings | null;
+  rating: number | null;
+  reviewCount: number;
+  latestReview: Review | null;
+  online: boolean;
 };
 
 // ─── main screen ────────────────────────────────────────────────────────────
 
 export default function DoctorHomeScreen() {
   const { colors } = useTheme();
-  const { token } = useAuth();
+  const { account } = useAuth();
+  const router = useRouter();
   const accent = DOCTOR_ACCENT;
   const accentBg = DOCTOR_ACCENT + "18";
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [data, setData] = useState<Dashboard | null>(null);
   const [avatarFailed, setAvatarFailed] = useState(false);
+  const [savingOnline, setSavingOnline] = useState(false);
 
   const [notifOpen, setNotifOpen] = useState(false);
-  const [addOpen, setAddOpen] = useState(false);
-  const [savingAppt, setSavingAppt] = useState(false);
-  const [apptPhone, setApptPhone] = useState("");
-  const [apptDate, setApptDate] = useState<Date | null>(null);
-  const [apptTime, setApptTime] = useState<Date | null>(null);
-  const [apptReason, setApptReason] = useState("");
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [notifications, setNotifications] = useState<InboxItem[]>([]);
+  const [unread, setUnread] = useState(0);
 
   const loadData = useCallback(async () => {
-    const result = await api<{ success: boolean; data: DashboardData }>("/api/doctors/dashboard", { token: token ?? undefined });
-    if (result.ok) {
-      setDashboard(result.data.data);
-      setAvatarFailed(false);
+    const [consultations, chats, earnings, me, inbox] = await Promise.all([
+      getMyConsultations(),
+      getMyChats("doctor"),
+      getMyEarnings(),
+      getMyDoctor(),
+      getMyNotifications(30),
+    ]);
+    const reviews = me ? await getDoctorReviews(me.id) : { reviews: [] };
+    setData({
+      consultations: consultations.ok ? consultations.data : [],
+      chats: chats.ok ? chats.data : [],
+      earnings: earnings.ok ? earnings.data : null,
+      rating: me && me.reviewCount ? me.rating : null,
+      reviewCount: me?.reviewCount ?? 0,
+      latestReview: reviews.reviews[0] ?? null,
+      online: Boolean(me?.isOnline),
+    });
+    if (inbox.ok) {
+      setNotifications(inbox.data.items);
+      setUnread(inbox.data.unread);
     }
-  }, [token]);
+    setAvatarFailed(false);
+  }, []);
 
-  // Refetch every time this screen gains focus (not just on manual pull-to-refresh),
-  // so appointment/notification state stays current when returning to it.
+  // Refetch every time this screen gains focus, so bookings and chats stay current.
   useFocusEffect(
     useCallback(() => {
       let active = true;
@@ -148,7 +137,7 @@ export default function DoctorHomeScreen() {
       return () => {
         active = false;
       };
-    }, [loadData])
+    }, [loadData]),
   );
 
   const onRefresh = async () => {
@@ -157,74 +146,31 @@ export default function DoctorHomeScreen() {
     setRefreshing(false);
   };
 
-  const handleAppointmentAction = (appt: Appointment, status: "completed" | "cancelled") => {
-    Alert.alert(
-      status === "completed" ? "Mark completed" : "Cancel appointment",
-      `${appt.patient?.name || "This patient"}'s appointment?`,
-      [
-        { text: "No", style: "cancel" },
-        {
-          text: "Yes",
-          onPress: async () => {
-            const result = await api(`/api/doctors/appointments/${appt._id}/status`, {
-              method: "PATCH",
-              token: token ?? undefined,
-              body: { status },
-            });
-            if (!result.ok) { Alert.alert("Couldn't update appointment", result.message); return; }
-            await loadData();
-          },
-        },
-      ]
-    );
-  };
-
-  const handleMarkReviewed = async (appt: Appointment) => {
-    const result = await api(`/api/doctors/appointments/${appt._id}/review`, {
-      method: "PATCH",
-      token: token ?? undefined,
-    });
-    if (!result.ok) { Alert.alert("Couldn't update", result.message); return; }
-    await loadData();
-  };
-
-  const openAddAppointment = () => {
-    setApptPhone("");
-    setApptDate(new Date());
-    setApptTime(new Date());
-    setApptReason("");
-    setAddOpen(true);
-  };
-
-  const handleCreateAppointment = async () => {
-    if (!apptPhone.trim() || !apptDate || !apptTime || savingAppt) return;
-    setSavingAppt(true);
-
-    const scheduledAt = new Date(
-      apptDate.getFullYear(), apptDate.getMonth(), apptDate.getDate(),
-      apptTime.getHours(), apptTime.getMinutes()
-    );
-
-    const result = await api("/api/doctors/appointments", {
-      method: "POST",
-      token: token ?? undefined,
-      body: { patientPhone: apptPhone.trim(), scheduledAt: scheduledAt.toISOString(), reason: apptReason.trim() || undefined },
-    });
-
-    setSavingAppt(false);
-
+  const toggleOnline = async (next: boolean) => {
+    if (!data || savingOnline) return;
+    setData({ ...data, online: next });
+    setSavingOnline(true);
+    const result = await setOnline(next);
+    setSavingOnline(false);
     if (!result.ok) {
-      Alert.alert("Couldn't create appointment", result.message);
-      return;
+      setData((d) => (d ? { ...d, online: !next } : d));
+      Alert.alert("Couldn't update", result.message);
     }
-
-    setAddOpen(false);
-    await loadData();
   };
 
-  const showPatientDetail = (patient?: AppointmentPatient) => {
-    if (!patient) return;
-    Alert.alert(patient.name || "Patient", patient.phone ? `Phone: ${patient.phone}` : "No additional details available.");
+  const openNotifications = () => {
+    setNotifOpen(true);
+    if (unread > 0) {
+      setUnread(0);
+      void markAllNotificationsRead();
+    }
+  };
+
+  /** The chat with this consultation's patient. */
+  const openChat = (c: Consultation) => {
+    const chat = data?.chats.find((ch) => ch.patientId && ch.patientId === c.patient?.id);
+    if (chat) router.push(`/consultation/${chat.id}`);
+    else Alert.alert(c.patient?.name ?? "Patient", `${c.concern}\n\nThe chat appears here once the patient writes. Ref ${c.id}`);
   };
 
   if (loading) {
@@ -235,7 +181,17 @@ export default function DoctorHomeScreen() {
     );
   }
 
-  const notificationBadge = !!dashboard?.notificationCount;
+  const now = new Date();
+  const withState = (data?.consultations ?? []).map((c) => ({ c, t: timeline(c, now) }));
+  // Running now, or starting later today.
+  const today = withState
+    .filter(({ t }) => t.state === "active" || (t.state === "upcoming" && isSameDay(t.startsAt, now)))
+    .sort((a, b) => a.c.startsAt.localeCompare(b.c.startsAt));
+  const upcoming = withState
+    .filter(({ t }) => t.state === "upcoming" && !isSameDay(t.startsAt, now))
+    .sort((a, b) => a.c.startsAt.localeCompare(b.c.startsAt));
+  const waiting = (data?.chats ?? []).filter((c) => c.lastFrom === "patient");
+  const available = data?.earnings?.balance.availableGBP;
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]}>
@@ -248,116 +204,126 @@ export default function DoctorHomeScreen() {
         <View style={s.header}>
           <View style={s.avatarWrap}>
             <View style={[s.avatar, { backgroundColor: accent }]}>
-              {dashboard?.avatar && !avatarFailed ? (
-                <Image
-                  source={{ uri: dashboard.avatar }}
-                  style={s.avatarImage}
-                  onError={() => setAvatarFailed(true)}
-                />
+              {account?.avatar && !avatarFailed ? (
+                <Image source={{ uri: account.avatar }} style={s.avatarImage} onError={() => setAvatarFailed(true)} />
               ) : (
-                <Text style={s.avatarInitials}>{initials(dashboard?.name)}</Text>
+                <Text style={s.avatarInitials}>{initials(account?.fullName)}</Text>
               )}
             </View>
             <View style={s.ml10}>
               <Text style={[s.greeting, { color: colors.textMuted }]}>{greeting()}</Text>
-              <Text style={[s.name, { color: colors.text }]}>
-                {doctorName(dashboard?.name)}
-              </Text>
+              <Text style={[s.name, { color: colors.text }]}>{doctorName(account?.fullName)}</Text>
             </View>
           </View>
-          <Pressable style={[s.bellBtn, { backgroundColor: accentBg }]} onPress={() => setNotifOpen(true)}>
+          <Pressable style={[s.bellBtn, { backgroundColor: accentBg }]} onPress={openNotifications}>
             <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
               <Path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" stroke={accent} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
               <Path d="M13.73 21a2 2 0 0 1-3.46 0" stroke={accent} strokeWidth={1.8} strokeLinecap="round" />
             </Svg>
-            {notificationBadge && <View style={s.bellBadge} />}
+            {unread > 0 && <View style={s.bellBadge} />}
           </Pressable>
         </View>
 
         {/* ── Hero card ── */}
-        <LinearGradient
-          colors={["#2f9aa8", "#175a63"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={s.heroCard}
-        >
+        <LinearGradient colors={["#2f9aa8", "#175a63"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.heroCard}>
           <View style={s.dropletWatermark} pointerEvents="none">
             <Svg width={130} height={130} viewBox="0 0 24 24" fill="rgba(255,255,255,0.15)">
               <Path d="M12 2l7 8a9 9 0 1 1-14 0z" stroke="none" />
             </Svg>
           </View>
 
-          <Text style={s.heroLabel}>{formatFullDate(new Date())}</Text>
+          <Text style={s.heroLabel}>{formatFullDate(now)}</Text>
           <Text style={s.heroTitle}>Here's your day at a glance</Text>
 
           <View style={s.heroStatsRow}>
             <View style={s.heroStat}>
-              <Text style={s.heroStatValue}>{dashboard?.totalAssignedPatients ?? 0}</Text>
-              <Text style={s.heroStatLabel}>Assigned Patients</Text>
+              <Text style={s.heroStatValue}>{today.length}</Text>
+              <Text style={s.heroStatLabel}>Today's Consultations</Text>
             </View>
             <View style={s.heroStatDivider} />
             <View style={s.heroStat}>
-              <Text style={s.heroStatValue}>{dashboard?.todaysAppointments.length ?? 0}</Text>
-              <Text style={s.heroStatLabel}>Today's Appointments</Text>
+              <Text style={s.heroStatValue}>{waiting.length}</Text>
+              <Text style={s.heroStatLabel}>Waiting for You</Text>
             </View>
+          </View>
+
+          <View style={s.onlineRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={s.onlineTitle}>{data?.online ? "You're online" : "You're offline"}</Text>
+              <Text style={s.onlineSub}>{data?.online ? "Patients can start new chats" : "New chats are paused"}</Text>
+            </View>
+            <Switch
+              value={Boolean(data?.online)}
+              onValueChange={toggleOnline}
+              disabled={savingOnline}
+              trackColor={{ true: "#7fe0d6", false: "rgba(255,255,255,0.35)" }}
+              thumbColor="#fff"
+            />
           </View>
         </LinearGradient>
 
         {/* ── Ad banner (F1) ── */}
-        <AdBanner placement="doctor_home" />
+        <AdBanner placement="doctor-dashboard" />
 
-        {/* ── D3: Today's Appointments ── */}
+        {/* ── Today's Consultations ── */}
         <View style={s.sectionHeaderRow}>
-          <Text style={[s.sectionTitle, { color: colors.text }]}>Today's Appointments</Text>
-          <Pressable onPress={openAddAppointment}>
-            <Text style={[s.addLink, { color: accent }]}>+ New</Text>
+          <Text style={[s.sectionTitle, { color: colors.text, marginBottom: 0 }]}>Today's Consultations</Text>
+          <Pressable onPress={() => router.push("/(doctor-tabs)/availability")}>
+            <Text style={[s.addLink, { color: accent }]}>Schedule</Text>
           </Pressable>
         </View>
         <View style={[s.card, { backgroundColor: colors.surface }]}>
-          {!dashboard?.todaysAppointments.length ? (
-            <Text style={[s.emptyText, { color: colors.textMuted }]}>No appointments scheduled today.</Text>
+          {!today.length ? (
+            <Text style={[s.emptyText, { color: colors.textMuted }]}>No consultations today.</Text>
           ) : (
-            dashboard.todaysAppointments.map((appt, i) => (
-              <Pressable
-                key={appt._id}
-                onPress={() => showPatientDetail(appt.patient)}
-                style={[s.apptRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.apptName, { color: colors.text }]}>{appt.patient?.name || "Patient"}</Text>
-                  <Text style={[s.apptSub, { color: colors.textMuted }]}>
-                    {formatTime(new Date(appt.scheduledAt))}{appt.reason ? ` · ${appt.reason}` : ""}
-                  </Text>
-                </View>
-                <View style={{ flexDirection: "row", gap: 8 }}>
-                  <Pressable onPress={() => handleAppointmentAction(appt, "completed")} style={[s.miniBtn, { backgroundColor: accent }]}>
-                    <Text style={s.miniBtnText}>Complete</Text>
-                  </Pressable>
-                  <Pressable onPress={() => handleAppointmentAction(appt, "cancelled")} style={[s.miniBtn, { backgroundColor: colors.border }]}>
-                    <Text style={[s.miniBtnText, { color: colors.textMuted }]}>Cancel</Text>
-                  </Pressable>
-                </View>
-              </Pressable>
-            ))
+            today.map(({ c, t }, i) => {
+              const minsAway = minutesUntil(t.startsAt);
+              return (
+                <Pressable
+                  key={c.id}
+                  onPress={() => openChat(c)}
+                  style={[s.apptCard, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[s.apptName, { color: colors.text }]}>{c.patient?.name || "Patient"}</Text>
+                      <Text style={[s.apptSub, { color: colors.textMuted }]} numberOfLines={1}>
+                        {c.mode === "instant" ? "Chat now" : formatTime(t.startsAt)} · {c.concern}
+                      </Text>
+                    </View>
+                    {t.state === "active" ? (
+                      <View style={[s.liveBadge, { backgroundColor: "#10b981" }]}>
+                        <View style={s.liveDot} />
+                        <Text style={s.liveBadgeText}>Open</Text>
+                      </View>
+                    ) : minsAway > 0 && minsAway <= 60 ? (
+                      <View style={[s.soonBadge, { backgroundColor: accentBg }]}>
+                        <Text style={[s.soonBadgeText, { color: accent }]}>in {minsAway}m</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </Pressable>
+              );
+            })
           )}
         </View>
 
-        {/* ── D3: Upcoming Consultations ── */}
+        {/* ── Upcoming Consultations ── */}
         <Text style={[s.sectionTitle, { color: colors.text }]}>Upcoming Consultations</Text>
         <View style={[s.card, { backgroundColor: colors.surface }]}>
-          {!dashboard?.upcomingAppointments.length ? (
+          {!upcoming.length ? (
             <Text style={[s.emptyText, { color: colors.textMuted }]}>Nothing upcoming.</Text>
           ) : (
-            dashboard.upcomingAppointments.map((appt, i) => (
+            upcoming.slice(0, 10).map(({ c, t }, i) => (
               <Pressable
-                key={appt._id}
-                onPress={() => showPatientDetail(appt.patient)}
+                key={c.id}
+                onPress={() => openChat(c)}
                 style={[s.apptRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}
               >
                 <View style={{ flex: 1 }}>
-                  <Text style={[s.apptName, { color: colors.text }]}>{appt.patient?.name || "Patient"}</Text>
+                  <Text style={[s.apptName, { color: colors.text }]}>{c.patient?.name || "Patient"}</Text>
                   <Text style={[s.apptSub, { color: colors.textMuted }]}>
-                    {formatShort(new Date(appt.scheduledAt))}, {formatTime(new Date(appt.scheduledAt))}
+                    {formatShort(t.startsAt)}, {formatTime(t.startsAt)} · {c.id}
                   </Text>
                 </View>
               </Pressable>
@@ -365,145 +331,77 @@ export default function DoctorHomeScreen() {
           )}
         </View>
 
-        {/* ── D3: Completed Visits ── */}
-        <Text style={[s.sectionTitle, { color: colors.text }]}>Completed Visits</Text>
-        <View style={[s.card, { backgroundColor: colors.surface, marginBottom: 20 }]}>
-          {!dashboard?.completedAppointments.length ? (
-            <Text style={[s.emptyText, { color: colors.textMuted }]}>No completed visits yet.</Text>
+        {/* ── Patients waiting for a reply ── */}
+        <Text style={[s.sectionTitle, { color: colors.text }]}>Waiting for Your Reply</Text>
+        <View style={[s.card, { backgroundColor: colors.surface }]}>
+          {!waiting.length ? (
+            <Text style={[s.emptyText, { color: colors.textMuted }]}>You're all caught up.</Text>
           ) : (
-            dashboard.completedAppointments.map((appt, i) => (
+            waiting.map((chat, i) => (
               <Pressable
-                key={appt._id}
-                onPress={() => showPatientDetail(appt.patient)}
-                style={[s.apptRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}
+                key={chat.id}
+                onPress={() => router.push(`/consultation/${chat.id}`)}
+                style={[s.activityRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}
               >
+                <Text style={{ fontSize: 16 }}>💬</Text>
                 <View style={{ flex: 1 }}>
-                  <Text style={[s.apptName, { color: colors.text }]}>{appt.patient?.name || "Patient"}</Text>
-                  <Text style={[s.apptSub, { color: colors.textMuted }]}>
-                    {formatShort(new Date(appt.scheduledAt))}{appt.reason ? ` · ${appt.reason}` : ""}
+                  <Text style={[s.apptName, { color: colors.text }]}>{chat.name}</Text>
+                  <Text style={[s.apptSub, { color: colors.textMuted }]} numberOfLines={1}>
+                    {chat.lastText ?? ""}
                   </Text>
                 </View>
-                {appt.reviewed ? (
-                  <View style={[s.badge, { backgroundColor: accentBg }]}>
-                    <Text style={[s.badgeText, { color: accent }]}>Reviewed</Text>
-                  </View>
-                ) : (
-                  <Pressable onPress={() => handleMarkReviewed(appt)} style={[s.miniBtn, { backgroundColor: accent }]}>
-                    <Text style={s.miniBtnText}>Mark Reviewed</Text>
-                  </Pressable>
-                )}
+                {!!chat.lastAt && <Text style={{ color: colors.textMuted, fontSize: 11 }}>{timeAgo(chat.lastAt)}</Text>}
               </Pressable>
             ))
           )}
         </View>
 
-        {/* ── D1: Recent Activity ── */}
-        <Text style={[s.sectionTitle, { color: colors.text }]}>Recent Activity</Text>
+        {/* ── Earnings and reviews ── */}
+        <Text style={[s.sectionTitle, { color: colors.text }]}>Earnings & Reviews</Text>
         <View style={[s.card, { backgroundColor: colors.surface, marginBottom: 20 }]}>
-          {!dashboard?.recentActivity.length ? (
-            <Text style={[s.emptyText, { color: colors.textMuted }]}>No recent activity.</Text>
-          ) : (
-            dashboard.recentActivity.map((item, i) => (
-              <View key={i} style={[s.activityRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}>
-                <Text style={{ fontSize: 16 }}>{item.type === "period_entry" ? "📋" : "✅"}</Text>
-                <Text style={[s.activityText, { color: colors.text }]}>
-                  {item.patientName} {item.type === "period_entry" ? "logged a new period entry" : "completed a visit"}
-                </Text>
-                <Text style={{ color: colors.textMuted, fontSize: 11 }}>{timeAgo(item.createdAt)}</Text>
-              </View>
-            ))
+          <View style={s.activityRow}>
+            <Text style={{ fontSize: 16 }}>💷</Text>
+            <Text style={[s.activityText, { color: colors.text }]}>Available to withdraw</Text>
+            <Text style={[s.apptName, { color: colors.text }]}>{available === undefined ? "—" : formatMoney(available, "GBP")}</Text>
+          </View>
+          <View style={[s.activityRow, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}>
+            <Text style={{ fontSize: 16 }}>⭐</Text>
+            <Text style={[s.activityText, { color: colors.text }]}>Average rating</Text>
+            <Text style={[s.apptName, { color: colors.text }]}>
+              {data?.rating ? `${data.rating.toFixed(1)} (${data.reviewCount})` : "—"}
+            </Text>
+          </View>
+          {data?.latestReview && (
+            <View style={[s.apptCard, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}>
+              <Text style={[s.apptSub, { color: colors.textMuted, marginTop: 0 }]}>Latest review · {"★".repeat(Math.round(data.latestReview.rating))}</Text>
+              <Text style={{ color: colors.text, fontSize: 13, lineHeight: 19, marginTop: 4 }}>“{data.latestReview.text}”</Text>
+            </View>
           )}
         </View>
       </ScrollView>
 
-      {/* ── Notifications modal (D4) ── */}
+      {/* ── Notifications modal ── */}
       <Modal visible={notifOpen} animationType="slide" transparent onRequestClose={() => setNotifOpen(false)}>
         <Pressable style={m.backdrop} onPress={() => setNotifOpen(false)} />
         <View style={[m.sheet, { backgroundColor: colors.surface, maxHeight: "70%" }]}>
           <View style={[m.handle, { backgroundColor: colors.border }]} />
           <Text style={[m.title, { color: colors.text }]}>Notifications</Text>
           <ScrollView showsVerticalScrollIndicator={false}>
-            {!dashboard?.notifications.length ? (
+            {!notifications.length ? (
               <Text style={[s.emptyText, { color: colors.textMuted, paddingVertical: 20 }]}>No notifications right now.</Text>
             ) : (
-              dashboard.notifications.map((n, i) => (
-                <View key={i} style={[s.activityRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}>
-                  <Text style={{ fontSize: 16 }}>{NOTIF_ICON[n.type]}</Text>
+              notifications.map((n, i) => (
+                <View key={n.id} style={[s.activityRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}>
+                  <Text style={{ fontSize: 16 }}>{n.read ? "🔔" : "🆕"}</Text>
                   <View style={{ flex: 1 }}>
-                    <Text style={[s.apptName, { color: colors.text }]}>{n.patientName}</Text>
-                    <Text style={[s.apptSub, { color: colors.textMuted }]}>{n.message}</Text>
+                    <Text style={[s.apptName, { color: colors.text }]}>{n.title}</Text>
+                    <Text style={[s.apptSub, { color: colors.textMuted }]}>{n.body}</Text>
                   </View>
-                  <Text style={{ color: colors.textMuted, fontSize: 11 }}>{timeAgo(n.createdAt)}</Text>
+                  <Text style={{ color: colors.textMuted, fontSize: 11 }}>{timeAgo(n.at)}</Text>
                 </View>
               ))
             )}
           </ScrollView>
-        </View>
-      </Modal>
-
-      {/* ── New appointment modal ── */}
-      <Modal visible={addOpen} animationType="slide" transparent onRequestClose={() => setAddOpen(false)}>
-        <Pressable style={m.backdrop} onPress={() => setAddOpen(false)} />
-        <View style={[m.sheet, { backgroundColor: colors.surface }]}>
-          <View style={[m.handle, { backgroundColor: colors.border }]} />
-          <Text style={[m.title, { color: colors.text }]}>New Appointment</Text>
-
-          <Text style={[m.fieldLabel, { color: colors.text }]}>Patient Phone</Text>
-          <TextInput
-            value={apptPhone}
-            onChangeText={setApptPhone}
-            placeholder="e.g. +447700000000"
-            placeholderTextColor={colors.textMuted}
-            keyboardType="phone-pad"
-            style={[m.input, { color: colors.text, backgroundColor: colors.background, borderColor: colors.border }]}
-          />
-
-          <Text style={[m.fieldLabel, { color: colors.text }]}>Date</Text>
-          <Pressable onPress={() => setShowDatePicker(true)} style={[m.input, { backgroundColor: colors.background, borderColor: colors.border, justifyContent: "center" }]}>
-            <Text style={{ color: colors.text }}>{apptDate ? formatShort(apptDate) : "Select date"}</Text>
-          </Pressable>
-          {showDatePicker && (
-            <DateTimePicker
-              value={apptDate ?? new Date()}
-              mode="date"
-              display={Platform.OS === "ios" ? "spinner" : "default"}
-              minimumDate={new Date()}
-              onChange={(_: DateTimePickerEvent, d?: Date) => { if (Platform.OS === "android") setShowDatePicker(false); if (d) setApptDate(d); }}
-            />
-          )}
-
-          <Text style={[m.fieldLabel, { color: colors.text }]}>Time</Text>
-          <Pressable onPress={() => setShowTimePicker(true)} style={[m.input, { backgroundColor: colors.background, borderColor: colors.border, justifyContent: "center" }]}>
-            <Text style={{ color: colors.text }}>{apptTime ? formatTime(apptTime) : "Select time"}</Text>
-          </Pressable>
-          {showTimePicker && (
-            <DateTimePicker
-              value={apptTime ?? new Date()}
-              mode="time"
-              display={Platform.OS === "ios" ? "spinner" : "default"}
-              onChange={(_: DateTimePickerEvent, d?: Date) => { if (Platform.OS === "android") setShowTimePicker(false); if (d) setApptTime(d); }}
-            />
-          )}
-
-          <Text style={[m.fieldLabel, { color: colors.text }]}>Reason (optional)</Text>
-          <TextInput
-            value={apptReason}
-            onChangeText={setApptReason}
-            placeholder="e.g. Irregular cycle follow-up"
-            placeholderTextColor={colors.textMuted}
-            style={[m.input, { color: colors.text, backgroundColor: colors.background, borderColor: colors.border }]}
-          />
-
-          <Pressable
-            onPress={handleCreateAppointment}
-            disabled={!apptPhone.trim() || savingAppt}
-            style={[m.saveBtn, { backgroundColor: accent, opacity: !apptPhone.trim() || savingAppt ? 0.6 : 1 }]}
-          >
-            {savingAppt ? <ActivityIndicator color="#fff" /> : <Text style={m.saveBtnText}>Create Appointment</Text>}
-          </Pressable>
-          <Pressable onPress={() => setAddOpen(false)} style={{ paddingVertical: 8, alignItems: "center" }}>
-            <Text style={{ color: colors.textMuted, fontSize: 14, fontWeight: "600" }}>Cancel</Text>
-          </Pressable>
         </View>
       </Modal>
     </SafeAreaView>
@@ -535,6 +433,9 @@ const s = StyleSheet.create({
   heroStat: { flex: 1, alignItems: "flex-start" },
   heroStatValue: { color: "#fff", fontSize: 26, fontWeight: "800" },
   heroStatLabel: { color: "rgba(255,255,255,0.8)", fontSize: 11, fontWeight: "600", marginTop: 2 },
+  onlineRow: { flexDirection: "row", alignItems: "center", gap: 12, marginTop: 18, backgroundColor: "rgba(255,255,255,0.14)", borderRadius: 14, paddingHorizontal: 14, paddingVertical: 10 },
+  onlineTitle: { color: "#fff", fontSize: 14, fontWeight: "800" },
+  onlineSub: { color: "rgba(255,255,255,0.8)", fontSize: 11, marginTop: 2 },
   heroStatDivider: { width: StyleSheet.hairlineWidth, height: 34, backgroundColor: "rgba(255,255,255,0.35)", marginHorizontal: 16 },
 
   sectionHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
@@ -545,10 +446,17 @@ const s = StyleSheet.create({
   emptyText: { fontSize: 13, textAlign: "center", paddingVertical: 16 },
 
   apptRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 10, paddingVertical: 12 },
+  apptCard: { paddingHorizontal: 10, paddingVertical: 12 },
   apptName: { fontSize: 14, fontWeight: "700" },
   apptSub: { fontSize: 12, marginTop: 2 },
   miniBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
   miniBtnText: { color: "#fff", fontSize: 11, fontWeight: "700" },
+  joinBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
+  liveBadge: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 12 },
+  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#fff" },
+  liveBadgeText: { color: "#fff", fontSize: 10.5, fontWeight: "800" },
+  soonBadge: { paddingHorizontal: 9, paddingVertical: 5, borderRadius: 12 },
+  soonBadgeText: { fontSize: 10.5, fontWeight: "800" },
 
   badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 },
   badgeText: { fontSize: 10, fontWeight: "700" },
