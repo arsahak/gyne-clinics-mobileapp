@@ -1,4 +1,4 @@
-# GyneX — Mobile App
+# Gynex — Mobile App
 
 Expert Women's Healthcare platform built with **React Native + Expo + TypeScript**.
 No UI library — just React Native primitives + `StyleSheet` + a small design-token system.

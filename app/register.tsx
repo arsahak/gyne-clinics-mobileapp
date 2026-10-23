@@ -9,7 +9,7 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 
-// A new, verified number chooses how it will use GyneX (same step as
+// A new, verified number chooses how it will use Gynex (same step as
 // the webapp's /register). The account is created with that role; the name
 // and the rest are asked in onboarding.
 
@@ -65,7 +65,7 @@ export default function RegisterScreen() {
       </View>
 
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
-        <Text style={[s.title, { color: colors.text }]}>How will you use GyneX?</Text>
+        <Text style={[s.title, { color: colors.text }]}>How will you use Gynex?</Text>
         <Text style={[s.sub, { color: colors.textMuted }]}>
           <Text style={{ color: colors.text, fontWeight: "700" }}>{phone}</Text> is verified. Choose one to continue. This can't be
           changed later.

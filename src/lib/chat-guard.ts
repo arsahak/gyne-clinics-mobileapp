@@ -28,5 +28,5 @@ export function describeBlocked(reasons: BlockedReason[]) {
   const labels = reasons.map((r) => BLOCKED_LABELS[r]);
   const list =
     labels.length > 1 ? `${labels.slice(0, -1).join(", ")} and ${labels.at(-1)}` : labels[0];
-  return `For your safety, ${list} can't be shared here. Please keep all communication inside GyneX.`;
+  return `For your safety, ${list} can't be shared here. Please keep all communication inside Gynex.`;
 }

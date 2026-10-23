@@ -33,7 +33,7 @@ function toArticle(item: BackendArticle): Article {
     category,
     format: item.format,
     readMinutes: item.readTimeMinutes ?? 1,
-    author: item.authorName || "GyneX Editorial Team",
+    author: item.authorName || "Gynex Editorial Team",
     authorRole: item.authorRole ?? "",
     publishedAt: item.publishedAt ?? new Date().toISOString(),
     cover: coverFor(category, item.slug),

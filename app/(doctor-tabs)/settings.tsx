@@ -278,7 +278,7 @@ export default function DoctorSettingsScreen() {
           <Trash2 size={15} color={colors.textMuted} />
           <Text variant="caption" color="textMuted">Delete account</Text>
         </Pressable>
-        <Text variant="caption" color="textMuted" align="center" style={s.version}>GyneX for Doctors · Version {config.appVersion}</Text>
+        <Text variant="caption" color="textMuted" align="center" style={s.version}>Gynex for Doctors · Version {config.appVersion}</Text>
       </ScrollView>
     </SafeAreaView>
   );

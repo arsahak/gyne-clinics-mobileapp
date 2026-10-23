@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { AccessibilityInfo, Animated, Easing, Image } from "react-native";
 
-// The GyneX figure (client artwork, without the name). "white" shows it in
+// The Gynex figure (client artwork, without the name). "white" shows it in
 // white on the brand gradient; "color" is the original teal.
 
 const ICON_SOURCE = require("../../../assets/logo/gynex-icon.png");
@@ -9,7 +9,7 @@ const ICON_RATIO = 480 / 307; // height / width of the image
 const SWING_MS = 1300;
 
 /**
- * The GyneX figure. With `animated`, it dances gently: sways from its feet,
+ * The Gynex figure. With `animated`, it dances gently: sways from its feet,
  * lifting a little at the middle of each swing. Still when the phone asks
  * for reduced motion.
  */
@@ -56,7 +56,7 @@ export function BrandIcon({
     <Image
       source={ICON_SOURCE}
       accessibilityRole="image"
-      accessibilityLabel="GyneX"
+      accessibilityLabel="Gynex"
       resizeMode="contain"
       style={{ height, width, tintColor: tone === "white" ? "#fff" : undefined }}
     />

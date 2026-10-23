@@ -90,7 +90,7 @@ export function AppSplashScreen({ onFinish }: Props) {
     <Animated.View
       style={[s.wrap, { opacity: screen }]}
       accessible
-      accessibilityLabel="GyneX. Women's health, in your pocket. Loading"
+      accessibilityLabel="Gynex. Women's health, in your pocket. Loading"
     >
       <StatusBar style="light" />
       <LinearGradient colors={BRAND_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
@@ -103,7 +103,7 @@ export function AppSplashScreen({ onFinish }: Props) {
         </Animated.View>
 
         <Animated.View style={[s.textBlock, rise(text)]}>
-          <Text style={s.appName}>GyneX</Text>
+          <Text style={s.appName}>Gynex</Text>
           <Text style={s.tagline}>Women's health, in your pocket.</Text>
         </Animated.View>
 

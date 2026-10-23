@@ -1,5 +1,5 @@
 // ============================================================
-//  GyneX Brand Palette — the client logo's purple and teal
+//  Gynex Brand Palette — the client logo's purple and teal
 // ============================================================
 
 export const palette = {

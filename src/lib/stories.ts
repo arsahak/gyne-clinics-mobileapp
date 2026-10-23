@@ -23,7 +23,7 @@ export function storyToArticle(story: SubmittedStory): Article {
     format: "story",
     readMinutes: Math.max(1, Math.ceil(words / 200)),
     author: story.anonymous ? "Anonymous" : story.authorName || "Community member",
-    authorRole: `Community story · ${story.topic} · Approved by GyneX`,
+    authorRole: `Community story · ${story.topic} · Approved by Gynex`,
     publishedAt: story.publishedAt ?? story.createdAt,
     cover: { from: "#6c3c80", to: "#a67fb7", icon: "MessageCircleHeart" },
     image: story.imageUrl || undefined,
