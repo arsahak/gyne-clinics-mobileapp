@@ -20,6 +20,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { FormSkeleton } from "@/components/ui/Skeleton";
 
 // Same choices as the webapp and the backend.
 const SPECIALIZATIONS = [
@@ -192,13 +193,13 @@ export default function EditDoctorProfileScreen() {
         <View style={s.headerButton} />
       </View>
       {loading ? (
-        <View style={s.loader}><ActivityIndicator size="large" color={accent} /></View>
+        <FormSkeleton fields={7} />
       ) : (
         <KeyboardAvoidingView style={s.safe} behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <View style={s.photoSection}>
               <Pressable accessibilityRole="button" accessibilityLabel="Change profile picture" onPress={chooseProfilePhoto} disabled={uploadingAvatar} style={s.photoButton}>
-                <View style={[s.profilePhoto, { backgroundColor: accent }]}>
+                <View style={[s.profilePhoto, { backgroundColor: (localAvatar || avatar) && !avatarFailed ? colors.surface : accent, borderWidth: (localAvatar || avatar) && !avatarFailed ? 1 : 0, borderColor: colors.border }]}>
                   {(localAvatar || avatar) && !avatarFailed ? <Image source={{ uri: localAvatar || avatar || undefined }} style={s.profilePhotoImage} onError={() => setAvatarFailed(true)} /> : <Text style={s.profilePhotoInitials}>{initials(name)}</Text>}
                   {uploadingAvatar && <View style={s.profilePhotoLoading}><ActivityIndicator color="#fff" /></View>}
                 </View>

@@ -550,7 +550,7 @@ export default function HomeScreen() {
         {/* ── Header ── */}
         <View style={s.header}>
           <View style={s.avatarWrap}>
-            <View style={[s.avatar, { backgroundColor: accent }]}>
+            <View style={[s.avatar, { backgroundColor: summary?.avatar && !avatarFailed ? colors.surface : accent, borderWidth: summary?.avatar && !avatarFailed ? 1 : 0, borderColor: colors.border }]}>
               {summary?.avatar && !avatarFailed ? (
                 <Image source={{ uri: summary.avatar }} style={s.avatarImage} onError={() => setAvatarFailed(true)} />
               ) : (

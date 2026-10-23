@@ -10,6 +10,7 @@ import { ArrowLeft, CalendarDays, Camera, Check, HeartPulse, Save, X } from "luc
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { FormSkeleton } from "@/components/ui/Skeleton";
 
 type DateKey = "dob" | "lastPeriod" | "dueDate";
 
@@ -229,7 +230,7 @@ export default function EditPatientProfileScreen() {
         <View style={s.headerButton} />
       </View>
       {loading ? (
-        <View style={s.loader}><ActivityIndicator size="large" color={colors.primary} /></View>
+        <FormSkeleton fields={6} />
       ) : (
         <KeyboardAvoidingView style={s.safe} behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <ScrollView contentContainerStyle={s.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
@@ -241,7 +242,7 @@ export default function EditPatientProfileScreen() {
                 disabled={uploadingAvatar}
                 style={s.photoButton}
               >
-                <View style={[s.profilePhoto, { backgroundColor: colors.primary }]}> 
+                <View style={[s.profilePhoto, { backgroundColor: (localAvatar || avatar) && !avatarFailed ? colors.surface : colors.primary, borderWidth: (localAvatar || avatar) && !avatarFailed ? 1 : 0, borderColor: colors.border }]}>
                   {(localAvatar || avatar) && !avatarFailed ? (
                     <Image
                       source={{ uri: localAvatar || avatar || undefined }}

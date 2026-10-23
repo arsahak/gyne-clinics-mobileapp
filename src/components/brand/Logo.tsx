@@ -83,3 +83,19 @@ export function BrandIcon({
     </Animated.View>
   );
 }
+
+const LOGO_SOURCE = require("../../../assets/logo/gynexapp-logo-web.png");
+const LOGO_RATIO = 404 / 900; // height / width of the image
+
+/** The full Gynex logo (name and figure). "white" for the brand gradient. */
+export function BrandLogo({ width = 220, tone = "color" }: { width?: number; tone?: "color" | "white" }) {
+  return (
+    <Image
+      source={LOGO_SOURCE}
+      accessibilityRole="image"
+      accessibilityLabel="Gynex"
+      resizeMode="contain"
+      style={{ width, height: width * LOGO_RATIO, tintColor: tone === "white" ? "#fff" : undefined }}
+    />
+  );
+}

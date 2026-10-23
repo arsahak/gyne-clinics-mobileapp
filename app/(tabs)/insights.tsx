@@ -21,6 +21,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 // D1–D5: insights built only from what the patient logs (tracker on the
 // backend, same data as the webapp's Insights). Each card opens in place.
@@ -143,7 +144,7 @@ export default function InsightsScreen() {
                       <Text style={[s.valueText, { color: colors.primary }]}>{badge[card.key]}</Text>
                     </View>
                   ) : (
-                    <ActivityIndicator size="small" color={colors.primary} />
+                    <Skeleton width={56} height={24} radius={12} />
                   )}
                   {isOpen ? <ChevronUp size={18} color={colors.textMuted} /> : <ChevronDown size={18} color={colors.textMuted} />}
                 </Pressable>

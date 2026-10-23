@@ -2,7 +2,7 @@ import * as NativeSplash from "expo-splash-screen";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, View } from "react-native";
+import { View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { StripeProvider } from "@stripe/stripe-react-native";
@@ -50,10 +50,8 @@ function RootStack() {
   // Wait for AsyncStorage to load before routing
   if (isLoading) {
     return (
-      <View style={{ flex: 1, alignItems: "center", justifyContent: "center",
-                     backgroundColor: theme.colors.background }}>
-        <ActivityIndicator color={theme.colors.primary} size="large" />
-      </View>
+      // The splash screen covers this moment, so only the background shows.
+      <View style={{ flex: 1, backgroundColor: theme.colors.background }} />
     );
   }
 

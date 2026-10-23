@@ -5,7 +5,6 @@ import { useTheme } from "@/theme";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Pressable,
   RefreshControl,
@@ -17,6 +16,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
+import { ListSkeleton, Skeleton } from "@/components/ui/Skeleton";
 
 /** A patient who booked this doctor or wrote to them. */
 type PatientRow = {
@@ -127,8 +127,13 @@ export default function DoctorPatientsScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={[s.safe, { backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }]}>
-        <ActivityIndicator color={accent} size="large" />
+      <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]}>
+        {/* Title and search, then the patient list */}
+        <View style={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 6, gap: 12 }}>
+          <Skeleton width="40%" height={24} />
+          <Skeleton height={46} radius={14} />
+        </View>
+        <ListSkeleton rows={7} />
       </SafeAreaView>
     );
   }

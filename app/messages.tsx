@@ -6,9 +6,10 @@ import { useTheme } from "@/theme";
 import { useFocusEffect, useRouter } from "expo-router";
 import { CalendarCheck, ChevronRight, MessageCircle, ShieldCheck } from "lucide-react-native";
 import { useCallback, useState } from "react";
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
+import { ListSkeleton } from "@/components/ui/Skeleton";
 
 type ChatListItem = {
   /** Opens the chat: the doctor's id for patients, the chat id for doctors. */
@@ -127,9 +128,7 @@ export default function MessagesScreen() {
       </View>
 
       {loading ? (
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-          <ActivityIndicator color={accent} size="large" />
-        </View>
+        <ListSkeleton rows={6} />
       ) : (
         <ScrollView
           contentContainerStyle={s.scroll}

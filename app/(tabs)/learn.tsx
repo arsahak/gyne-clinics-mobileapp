@@ -21,6 +21,7 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
+import { ListSkeleton } from "@/components/ui/Skeleton";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type Content = {
@@ -788,7 +789,7 @@ export default function LearnScreen() {
           <View style={[m.handle, { backgroundColor: colors.border }]} />
           <Text style={[m.title, { color: colors.text }]}>Saved</Text>
           {savedLoading ? (
-            <ActivityIndicator color={accent} style={{ marginVertical: 20 }} />
+            <ListSkeleton rows={3} padded={false} />
           ) : (
             <ScrollView showsVerticalScrollIndicator={false}>
               {!savedItems.length ? (

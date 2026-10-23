@@ -30,6 +30,7 @@ import {
 import { useCallback, useMemo, useState } from "react";
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { BookingSkeleton } from "@/components/ui/Skeleton";
 
 // Book a consultation. Same steps as the webapp's /patient/doctors/[id]/book:
 // Time → Concern → Payment, then Stripe (or straight away when free), then
@@ -114,7 +115,7 @@ export default function BookScreen() {
       <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]}>
         {header}
         {loading ? (
-          <ActivityIndicator color={accent} size="large" style={{ marginTop: 60 }} />
+          <BookingSkeleton />
         ) : (
           <Text style={{ color: colors.textMuted, textAlign: "center", marginTop: 60 }}>This doctor isn't available for booking.</Text>
         )}

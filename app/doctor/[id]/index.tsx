@@ -30,6 +30,7 @@ import {
 import { useCallback, useState } from "react";
 import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { DoctorProfileSkeleton } from "@/components/ui/Skeleton";
 
 // A specialist's profile. Same as the webapp's /patient/doctors/[id]:
 // profile, about, consultation hours, booking card, reviews and reporting.
@@ -144,7 +145,7 @@ export default function DoctorProfileScreen() {
     return (
       <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]}>
         {header()}
-        <ActivityIndicator color={accent} size="large" style={{ marginTop: 60 }} />
+        <DoctorProfileSkeleton />
       </SafeAreaView>
     );
   }

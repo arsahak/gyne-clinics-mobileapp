@@ -150,13 +150,11 @@ export default function LoginScreen() {
             <View style={[s.glow, { top: -70, right: -60, width: 220, height: 220 }]} pointerEvents="none" />
             <View style={[s.glow, { bottom: 10, left: -80, width: 180, height: 180, opacity: 0.6 }]} pointerEvents="none" />
 
-            {/* App icon above the headline */}
+            {/* Just the app icon */}
             <View style={s.art}>
-              <BrandIcon height={92} tone="white" animated />
+              <BrandIcon height={120} tone="white" animated />
             </View>
 
-            <Text style={s.heroTitle}>Women's health,{"\n"}in your pocket.</Text>
-            <Text style={s.heroText}>Track your cycle and talk to verified doctors.</Text>
           </LinearGradient>
 
           {/* ── Card form ── */}
@@ -348,15 +346,13 @@ const s = StyleSheet.create({
   // ── Hero ──
   hero: {
     paddingHorizontal: 24,
-    paddingBottom: 70,
+    paddingBottom: 96,
     borderBottomLeftRadius: 36,
     borderBottomRightRadius: 36,
     overflow: "hidden",
   },
   glow: { position: "absolute", borderRadius: 999, backgroundColor: "rgba(255,255,255,0.13)" },
-  art: { alignSelf: "center", marginTop: 14 },
-  heroTitle: { color: "#fff", fontSize: 30, fontWeight: "900", lineHeight: 36, letterSpacing: -0.5, marginTop: 10, textAlign: "center" },
-  heroText: { color: "rgba(255,255,255,0.88)", fontSize: 14, lineHeight: 21, marginTop: 10, maxWidth: 330, textAlign: "center", alignSelf: "center" },
+  art: { alignSelf: "center", marginTop: 34, marginBottom: 10 },
 
   // ── Card ──
   card: {

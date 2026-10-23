@@ -10,8 +10,9 @@ import { useTheme } from "@/theme";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Bell, CalendarCheck, MessageCircle, Search, SlidersHorizontal, Stethoscope } from "lucide-react-native";
 import { Fragment, useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { DoctorGridSkeleton } from "@/components/ui/Skeleton";
 
 // Get help → Find a specialist. Same as the webapp's /patient/doctors:
 // search, filters, "Your doctors" first, then every verified specialist.
@@ -255,7 +256,7 @@ export default function HelpScreen() {
 
         <View style={s.padH}>
           {loading ? (
-            <ActivityIndicator color={accent} size="large" style={{ marginTop: 40 }} />
+            <DoctorGridSkeleton count={4} />
           ) : error && !doctors.length ? (
             <Pressable onPress={() => void load()} style={[s.empty, { borderColor: colors.border }]}>
               <Text style={{ color: colors.danger, fontSize: 13, textAlign: "center" }}>{error}</Text>

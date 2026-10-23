@@ -4,10 +4,11 @@ import type { Article } from "@/lib/types";
 import { useTheme } from "@/theme";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
-import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 import RenderHtml from "react-native-render-html";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
+import { ArticleSkeleton } from "@/components/ui/Skeleton";
 
 type Content = {
   _id: string;
@@ -124,9 +125,7 @@ export default function ContentDetailsScreen() {
       </View>
 
       {loading ? (
-        <View style={s.center}>
-          <ActivityIndicator color={accent} size="large" />
-        </View>
+        <ArticleSkeleton />
       ) : notFound || !content ? (
         <View style={s.center}>
           <Text style={{ color: colors.textMuted, fontSize: 14 }}>This content couldn't be found.</Text>

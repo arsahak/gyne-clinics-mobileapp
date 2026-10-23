@@ -25,6 +25,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
+import { ChatSkeleton } from "@/components/ui/Skeleton";
 
 // One conversation. Patients open it with the doctor's id, doctors with the
 // chat id (same as the webapp's Messages). Booking opens the Book screen.
@@ -284,9 +285,7 @@ export default function ConsultationScreen() {
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"} keyboardVerticalOffset={90}>
         {loading ? (
-          <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-            <ActivityIndicator color={accent} size="large" />
-          </View>
+          <ChatSkeleton />
         ) : (
           <ScrollView
             ref={scrollRef}

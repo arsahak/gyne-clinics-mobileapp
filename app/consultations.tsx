@@ -9,8 +9,9 @@ import { differenceInCalendarDays, format, formatDistanceStrict } from "date-fns
 import { useFocusEffect, useRouter } from "expo-router";
 import { ArrowLeft, CalendarCheck, CalendarClock, Clock, MessageCircle, ReceiptText, Zap } from "lucide-react-native";
 import { useCallback, useMemo, useState } from "react";
-import { ActivityIndicator, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { ListSkeleton } from "@/components/ui/Skeleton";
 
 // My consultations. Same as the webapp's /patient/consultations: upcoming,
 // ongoing and past bookings, each with its chat and receipt.
@@ -114,7 +115,7 @@ export default function ConsultationsScreen() {
         </View>
 
         {!loaded ? (
-          <ActivityIndicator color={accent} size="large" style={{ marginTop: 40 }} />
+          <ListSkeleton rows={4} padded={false} />
         ) : visible.length === 0 ? (
           <View style={[s.empty, { borderColor: colors.border }]}>
             <CalendarCheck size={28} color={colors.textMuted} />

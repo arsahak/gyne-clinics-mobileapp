@@ -4,10 +4,10 @@ import { StatusBar } from "expo-status-bar";
 import { ShieldCheck } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, Easing, StyleSheet, Text, View } from "react-native";
-import { BrandIcon } from "@/components/brand/Logo";
+import { BrandLogo } from "@/components/brand/Logo";
 
 // Launch screen in the same brand gradient as the login hero.
-// The icon settles in, the name and promise follow, and four dots below pulse
+// The logo settles in, the promise follows, and four dots below pulse
 // in turn — one for each phase of the cycle the app helps track.
 
 const SHOW_MS = 2600;
@@ -90,7 +90,7 @@ export function AppSplashScreen({ onFinish }: Props) {
     <Animated.View
       style={[s.wrap, { opacity: screen }]}
       accessible
-      accessibilityLabel="Gynex. Women's health, in your pocket. Loading"
+      accessibilityLabel="Gynex. Empowering and Redefining Women’s Health Care. Loading"
     >
       <StatusBar style="light" />
       <LinearGradient colors={BRAND_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
@@ -99,12 +99,11 @@ export function AppSplashScreen({ onFinish }: Props) {
 
       <View style={s.center}>
         <Animated.View style={{ opacity: logo, transform: [{ scale: logo.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1] }) }] }}>
-          <BrandIcon height={130} tone="white" animated />
+          <BrandLogo width={240} tone="white" />
         </Animated.View>
 
         <Animated.View style={[s.textBlock, rise(text)]}>
-          <Text style={s.appName}>Gynex</Text>
-          <Text style={s.tagline}>Women's health, in your pocket.</Text>
+          <Text style={s.tagline}>Empowering and Redefining{"\n"}Women’s Health Care.</Text>
         </Animated.View>
 
         <Animated.View style={[s.dots, { opacity: footer }]}>
@@ -137,8 +136,7 @@ const s = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: 30 },
 
   textBlock: { alignItems: "center", marginTop: 22 },
-  appName: { color: "#fff", fontSize: 34, fontWeight: "900", letterSpacing: -0.5 },
-  tagline: { color: "rgba(255,255,255,0.9)", fontSize: 15, fontWeight: "500", marginTop: 4, letterSpacing: 0.1 },
+  tagline: { color: "rgba(255,255,255,0.9)", fontSize: 15, lineHeight: 21, fontWeight: "500", marginTop: 6, letterSpacing: 0.1, textAlign: "center" },
 
   dots: { flexDirection: "row", gap: 10, marginTop: 34 },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#fff" },

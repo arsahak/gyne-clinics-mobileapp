@@ -263,7 +263,7 @@ export default function SettingsScreen() {
               ]}
             >
               <View style={s.avatarWrap}>
-                <View style={[s.avatar, { backgroundColor: colors.primary }]}> 
+                <View style={[s.avatar, { backgroundColor: profile?.account?.avatar && !avatarFailed ? colors.surface : colors.primary, borderWidth: profile?.account?.avatar && !avatarFailed ? 1 : 0, borderColor: colors.border }]}>
                   {profile?.account?.avatar && !avatarFailed ? (
                     <Image
                       source={{ uri: profile.account.avatar }}

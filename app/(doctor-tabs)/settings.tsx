@@ -199,7 +199,7 @@ export default function DoctorSettingsScreen() {
         ) : (
           <>
             <View style={[s.profileCard, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
-              <View style={[s.avatar, { backgroundColor: accent }]}>
+              <View style={[s.avatar, { backgroundColor: profile?.account?.avatar && !avatarFailed ? colors.surface : accent, borderWidth: profile?.account?.avatar && !avatarFailed ? 1 : 0, borderColor: colors.border }]}>
                 {profile?.account?.avatar && !avatarFailed ? (
                   <Image source={{ uri: profile.account.avatar }} style={s.avatarImage} onError={() => setAvatarFailed(true)} />
                 ) : (

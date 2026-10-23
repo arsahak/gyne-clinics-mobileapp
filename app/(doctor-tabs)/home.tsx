@@ -14,9 +14,8 @@ import { useTheme } from "@/theme";
 import { isSameDay } from "date-fns";
 import { LinearGradient } from "expo-linear-gradient";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { type ReactNode, useCallback, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Image,
   Modal,
@@ -30,6 +29,8 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
+import { CalendarClock, CheckCircle2, ChevronRight, Star, Wallet } from "lucide-react-native";
+import { DoctorHomeSkeleton } from "@/components/ui/Skeleton";
 
 // The doctor's day, from the backend (same data as the webapp's doctor
 // dashboard): consultations, patients waiting for a reply, earnings, the
@@ -39,9 +40,6 @@ import Svg, { Path } from "react-native-svg";
 
 function formatFullDate(d: Date) {
   return d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-}
-function formatShort(d: Date) {
-  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 function formatTime(d: Date) {
   return d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
@@ -70,6 +68,69 @@ function initials(name?: string | null) {
   const normalized = doctorName(name);
   if (normalized === "Doctor") return "DR";
   return normalized.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+}
+
+function formatWeekday(d: Date) {
+  return d.toLocaleDateString("en-GB", { weekday: "short" });
+}
+function nameInitials(name: string) {
+  return name.trim().split(/\s+/).slice(0, 2).map((part) => part[0] ?? "").join("").toUpperCase() || "P";
+}
+
+const GOLD = "#c69a3c";
+
+/** Section title with an optional count and a link on the right. */
+function SectionHeader({ title, count, action }: { title: string; count?: number; action?: { label: string; onPress: () => void } }) {
+  const { colors } = useTheme();
+  return (
+    <View style={s.sectionHeader}>
+      <Text style={[s.sectionTitle, { color: colors.text }]}>{title}</Text>
+      {!!count && (
+        <View style={[s.countPill, { backgroundColor: colors.primary + "18" }]}>
+          <Text style={[s.countText, { color: colors.primary }]}>{count}</Text>
+        </View>
+      )}
+      <View style={{ flex: 1 }} />
+      {action && (
+        <Pressable onPress={action.onPress} hitSlop={8}>
+          <Text style={[s.sectionLink, { color: colors.primary }]}>{action.label}</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+}
+
+/** Day and month in a small tile. */
+function DateTile({ date }: { date: Date }) {
+  const { colors } = useTheme();
+  return (
+    <View style={[s.dateTile, { backgroundColor: colors.primary + "14" }]}>
+      <Text style={[s.dateDay, { color: colors.primary }]}>{date.getDate()}</Text>
+      <Text style={[s.dateMonth, { color: colors.primary }]}>{date.toLocaleDateString("en-GB", { month: "short" }).toUpperCase()}</Text>
+    </View>
+  );
+}
+
+/** The patient's photo, or initials on their colour. */
+function PersonAvatar({ name, hue, uri }: { name: string; hue: number; uri?: string }) {
+  const [failed, setFailed] = useState(false);
+  if (uri && !failed) return <Image source={{ uri }} style={s.personAvatar} onError={() => setFailed(true)} />;
+  return (
+    <View style={[s.personAvatar, { backgroundColor: `hsl(${hue}, 45%, 92%)` }]}>
+      <Text style={[s.personInitials, { color: `hsl(${hue}, 45%, 35%)` }]}>{nameInitials(name)}</Text>
+    </View>
+  );
+}
+
+/** A quiet one-line empty state inside a card. */
+function EmptyRow({ icon, text }: { icon: ReactNode; text: string }) {
+  const { colors } = useTheme();
+  return (
+    <View style={s.emptyRow}>
+      {icon}
+      <Text style={[s.emptyText, { color: colors.textMuted }]}>{text}</Text>
+    </View>
+  );
 }
 
 type Dashboard = {
@@ -175,8 +236,8 @@ export default function DoctorHomeScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={[s.safe, { backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }]}>
-        <ActivityIndicator color={accent} size="large" />
+      <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]}>
+        <DoctorHomeSkeleton />
       </SafeAreaView>
     );
   }
@@ -192,6 +253,8 @@ export default function DoctorHomeScreen() {
     .sort((a, b) => a.c.startsAt.localeCompare(b.c.startsAt));
   const waiting = (data?.chats ?? []).filter((c) => c.lastFrom === "patient");
   const available = data?.earnings?.balance.availableGBP;
+  const hasPhoto = Boolean(account?.avatar) && !avatarFailed;
+  const divider = { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border };
 
   return (
     <SafeAreaView style={[s.safe, { backgroundColor: colors.background }]}>
@@ -203,9 +266,10 @@ export default function DoctorHomeScreen() {
         {/* ── Header ── */}
         <View style={s.header}>
           <View style={s.avatarWrap}>
-            <View style={[s.avatar, { backgroundColor: accent }]}>
-              {account?.avatar && !avatarFailed ? (
-                <Image source={{ uri: account.avatar }} style={s.avatarImage} onError={() => setAvatarFailed(true)} />
+            {/* A photo sits on white (it may have a transparent background); initials on the brand colour */}
+            <View style={[s.avatar, { backgroundColor: hasPhoto ? colors.surface : accent, borderWidth: hasPhoto ? 1 : 0, borderColor: colors.border }]}>
+              {hasPhoto ? (
+                <Image source={{ uri: account?.avatar }} style={s.avatarImage} onError={() => setAvatarFailed(true)} />
               ) : (
                 <Text style={s.avatarInitials}>{initials(account?.fullName)}</Text>
               )}
@@ -266,42 +330,38 @@ export default function DoctorHomeScreen() {
         <AdBanner placement="doctor-dashboard" />
 
         {/* ── Today's Consultations ── */}
-        <View style={s.sectionHeaderRow}>
-          <Text style={[s.sectionTitle, { color: colors.text, marginBottom: 0 }]}>Today's Consultations</Text>
-          <Pressable onPress={() => router.push("/(doctor-tabs)/availability")}>
-            <Text style={[s.addLink, { color: accent }]}>Schedule</Text>
-          </Pressable>
-        </View>
-        <View style={[s.card, { backgroundColor: colors.surface }]}>
+        <SectionHeader
+          title="Today's Consultations"
+          count={today.length}
+          action={{ label: "Schedule", onPress: () => router.push("/(doctor-tabs)/availability") }}
+        />
+        <View style={[s.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           {!today.length ? (
-            <Text style={[s.emptyText, { color: colors.textMuted }]}>No consultations today.</Text>
+            <EmptyRow icon={<CalendarClock size={18} color={colors.textMuted} />} text="No consultations today." />
           ) : (
             today.map(({ c, t }, i) => {
               const minsAway = minutesUntil(t.startsAt);
               return (
-                <Pressable
-                  key={c.id}
-                  onPress={() => openChat(c)}
-                  style={[s.apptCard, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}
-                >
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[s.apptName, { color: colors.text }]}>{c.patient?.name || "Patient"}</Text>
-                      <Text style={[s.apptSub, { color: colors.textMuted }]} numberOfLines={1}>
-                        {c.mode === "instant" ? "Chat now" : formatTime(t.startsAt)} · {c.concern}
-                      </Text>
-                    </View>
-                    {t.state === "active" ? (
-                      <View style={[s.liveBadge, { backgroundColor: "#10b981" }]}>
-                        <View style={s.liveDot} />
-                        <Text style={s.liveBadgeText}>Open</Text>
-                      </View>
-                    ) : minsAway > 0 && minsAway <= 60 ? (
-                      <View style={[s.soonBadge, { backgroundColor: accentBg }]}>
-                        <Text style={[s.soonBadgeText, { color: accent }]}>in {minsAway}m</Text>
-                      </View>
-                    ) : null}
+                <Pressable key={c.id} onPress={() => openChat(c)} style={({ pressed }) => [s.row, i > 0 && divider, pressed && s.pressed]}>
+                  <DateTile date={t.startsAt} />
+                  <View style={s.rowBody}>
+                    <Text style={[s.rowTitle, { color: colors.text }]} numberOfLines={1}>{c.patient?.name || "Patient"}</Text>
+                    <Text style={[s.rowSub, { color: colors.textMuted }]} numberOfLines={1}>
+                      {c.mode === "instant" ? "Chat now" : formatTime(t.startsAt)} · {c.concern}
+                    </Text>
                   </View>
+                  {t.state === "active" ? (
+                    <View style={[s.pill, { backgroundColor: "#dcfce7" }]}>
+                      <View style={[s.pillDot, { backgroundColor: "#16a34a" }]} />
+                      <Text style={[s.pillText, { color: "#15803d" }]}>Open</Text>
+                    </View>
+                  ) : minsAway > 0 && minsAway <= 60 ? (
+                    <View style={[s.pill, { backgroundColor: accentBg }]}>
+                      <Text style={[s.pillText, { color: accent }]}>in {minsAway}m</Text>
+                    </View>
+                  ) : (
+                    <ChevronRight size={18} color={colors.textMuted} />
+                  )}
                 </Pressable>
               );
             })
@@ -309,75 +369,97 @@ export default function DoctorHomeScreen() {
         </View>
 
         {/* ── Upcoming Consultations ── */}
-        <Text style={[s.sectionTitle, { color: colors.text }]}>Upcoming Consultations</Text>
-        <View style={[s.card, { backgroundColor: colors.surface }]}>
+        <SectionHeader title="Upcoming Consultations" count={upcoming.length} />
+        <View style={[s.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           {!upcoming.length ? (
-            <Text style={[s.emptyText, { color: colors.textMuted }]}>Nothing upcoming.</Text>
+            <EmptyRow icon={<CalendarClock size={18} color={colors.textMuted} />} text="Nothing upcoming." />
           ) : (
             upcoming.slice(0, 10).map(({ c, t }, i) => (
-              <Pressable
-                key={c.id}
-                onPress={() => openChat(c)}
-                style={[s.apptRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.apptName, { color: colors.text }]}>{c.patient?.name || "Patient"}</Text>
-                  <Text style={[s.apptSub, { color: colors.textMuted }]}>
-                    {formatShort(t.startsAt)}, {formatTime(t.startsAt)} · {c.id}
+              <Pressable key={c.id} onPress={() => openChat(c)} style={({ pressed }) => [s.row, i > 0 && divider, pressed && s.pressed]}>
+                <DateTile date={t.startsAt} />
+                <View style={s.rowBody}>
+                  <Text style={[s.rowTitle, { color: colors.text }]} numberOfLines={1}>{c.patient?.name || "Patient"}</Text>
+                  <Text style={[s.rowSub, { color: colors.textMuted }]} numberOfLines={1}>
+                    {formatWeekday(t.startsAt)}, {formatTime(t.startsAt)} · {c.concern}
                   </Text>
                 </View>
+                <ChevronRight size={18} color={colors.textMuted} />
               </Pressable>
             ))
           )}
         </View>
 
         {/* ── Patients waiting for a reply ── */}
-        <Text style={[s.sectionTitle, { color: colors.text }]}>Waiting for Your Reply</Text>
-        <View style={[s.card, { backgroundColor: colors.surface }]}>
+        <SectionHeader
+          title="Waiting for Your Reply"
+          count={waiting.length}
+          action={waiting.length ? { label: "All chats", onPress: () => router.push("/(doctor-tabs)/chat") } : undefined}
+        />
+        <View style={[s.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           {!waiting.length ? (
-            <Text style={[s.emptyText, { color: colors.textMuted }]}>You're all caught up.</Text>
+            <EmptyRow icon={<CheckCircle2 size={18} color="#16a34a" />} text="You're all caught up." />
           ) : (
             waiting.map((chat, i) => (
               <Pressable
                 key={chat.id}
                 onPress={() => router.push(`/consultation/${chat.id}`)}
-                style={[s.activityRow, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}
+                style={({ pressed }) => [s.row, i > 0 && divider, pressed && s.pressed]}
               >
-                <Text style={{ fontSize: 16 }}>💬</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={[s.apptName, { color: colors.text }]}>{chat.name}</Text>
-                  <Text style={[s.apptSub, { color: colors.textMuted }]} numberOfLines={1}>
-                    {chat.lastText ?? ""}
-                  </Text>
+                <View>
+                  <PersonAvatar name={chat.name} hue={chat.hue} uri={chat.avatar} />
+                  <View style={[s.unreadDot, { borderColor: colors.surface }]} />
                 </View>
-                {!!chat.lastAt && <Text style={{ color: colors.textMuted, fontSize: 11 }}>{timeAgo(chat.lastAt)}</Text>}
+                <View style={s.rowBody}>
+                  <View style={s.rowTop}>
+                    <Text style={[s.rowTitle, { color: colors.text, flex: 1 }]} numberOfLines={1}>{chat.name}</Text>
+                    {!!chat.lastAt && <Text style={[s.rowTime, { color: colors.textMuted }]}>{timeAgo(chat.lastAt)}</Text>}
+                  </View>
+                  <Text style={[s.rowSub, { color: colors.textMuted }]} numberOfLines={1}>{chat.lastText ?? "New message"}</Text>
+                </View>
               </Pressable>
             ))
           )}
         </View>
 
         {/* ── Earnings and reviews ── */}
-        <Text style={[s.sectionTitle, { color: colors.text }]}>Earnings & Reviews</Text>
-        <View style={[s.card, { backgroundColor: colors.surface, marginBottom: 20 }]}>
-          <View style={s.activityRow}>
-            <Text style={{ fontSize: 16 }}>💷</Text>
-            <Text style={[s.activityText, { color: colors.text }]}>Available to withdraw</Text>
-            <Text style={[s.apptName, { color: colors.text }]}>{available === undefined ? "—" : formatMoney(available, "GBP")}</Text>
+        <SectionHeader title="Earnings & Reviews" />
+        <View style={s.statsRow}>
+          <View style={[s.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[s.statIcon, { backgroundColor: accentBg }]}>
+              <Wallet size={18} color={accent} />
+            </View>
+            <Text style={[s.statValue, { color: colors.text }]}>{available === undefined ? "—" : formatMoney(available, "GBP")}</Text>
+            <Text style={[s.statLabel, { color: colors.textMuted }]}>Available to withdraw</Text>
           </View>
-          <View style={[s.activityRow, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}>
-            <Text style={{ fontSize: 16 }}>⭐</Text>
-            <Text style={[s.activityText, { color: colors.text }]}>Average rating</Text>
-            <Text style={[s.apptName, { color: colors.text }]}>
-              {data?.rating ? `${data.rating.toFixed(1)} (${data.reviewCount})` : "—"}
+          <View style={[s.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[s.statIcon, { backgroundColor: "#fdf3dc" }]}>
+              <Star size={18} color={GOLD} fill={GOLD} />
+            </View>
+            <Text style={[s.statValue, { color: colors.text }]}>{data?.rating ? data.rating.toFixed(1) : "—"}</Text>
+            <Text style={[s.statLabel, { color: colors.textMuted }]}>
+              {data?.reviewCount ? `${data.reviewCount} review${data.reviewCount === 1 ? "" : "s"}` : "No reviews yet"}
             </Text>
           </View>
-          {data?.latestReview && (
-            <View style={[s.apptCard, { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}>
-              <Text style={[s.apptSub, { color: colors.textMuted, marginTop: 0 }]}>Latest review · {"★".repeat(Math.round(data.latestReview.rating))}</Text>
-              <Text style={{ color: colors.text, fontSize: 13, lineHeight: 19, marginTop: 4 }}>“{data.latestReview.text}”</Text>
-            </View>
-          )}
         </View>
+        {data?.latestReview && (
+          <View style={[s.reviewCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={s.rowTop}>
+              <View style={{ flexDirection: "row", gap: 2, flex: 1 }}>
+                {Array.from({ length: 5 }, (_, i) => (
+                  <Star
+                    key={i}
+                    size={13}
+                    color={i < Math.round(data.latestReview!.rating) ? GOLD : colors.border}
+                    fill={i < Math.round(data.latestReview!.rating) ? GOLD : "transparent"}
+                  />
+                ))}
+              </View>
+              <Text style={[s.rowTime, { color: colors.textMuted }]}>Latest review</Text>
+            </View>
+            <Text style={[s.reviewText, { color: colors.text }]} numberOfLines={4}>“{data.latestReview.text}”</Text>
+            <Text style={[s.rowSub, { color: colors.textMuted }]}>— {data.latestReview.author || "Patient"}</Text>
+          </View>
+        )}
       </ScrollView>
 
       {/* ── Notifications modal ── */}
@@ -438,31 +520,48 @@ const s = StyleSheet.create({
   onlineSub: { color: "rgba(255,255,255,0.8)", fontSize: 11, marginTop: 2 },
   heroStatDivider: { width: StyleSheet.hairlineWidth, height: 34, backgroundColor: "rgba(255,255,255,0.35)", marginHorizontal: 16 },
 
-  sectionHeaderRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
-  sectionTitle: { fontSize: 17, fontWeight: "700", marginBottom: 12 },
-  addLink: { fontSize: 13, fontWeight: "700" },
+  sectionHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 },
+  sectionTitle: { fontSize: 17, fontWeight: "800", letterSpacing: -0.2 },
+  sectionLink: { fontSize: 13, fontWeight: "700" },
+  countPill: { minWidth: 22, height: 22, borderRadius: 11, paddingHorizontal: 7, alignItems: "center", justifyContent: "center" },
+  countText: { fontSize: 11.5, fontWeight: "800" },
 
-  card: { borderRadius: 18, padding: 6, marginBottom: 20, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
-  emptyText: { fontSize: 13, textAlign: "center", paddingVertical: 16 },
+  card: { borderRadius: 18, borderWidth: 1, marginBottom: 22, overflow: "hidden" },
+  row: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 14, paddingVertical: 12 },
+  pressed: { opacity: 0.6 },
+  rowBody: { flex: 1, minWidth: 0 },
+  rowTop: { flexDirection: "row", alignItems: "center", gap: 8 },
+  rowTitle: { fontSize: 14.5, fontWeight: "700" },
+  rowSub: { fontSize: 12.5, marginTop: 2 },
+  rowTime: { fontSize: 11.5 },
 
-  apptRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 10, paddingVertical: 12 },
-  apptCard: { paddingHorizontal: 10, paddingVertical: 12 },
-  apptName: { fontSize: 14, fontWeight: "700" },
-  apptSub: { fontSize: 12, marginTop: 2 },
-  miniBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
-  miniBtnText: { color: "#fff", fontSize: 11, fontWeight: "700" },
-  joinBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
-  liveBadge: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 12 },
-  liveDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#fff" },
-  liveBadgeText: { color: "#fff", fontSize: 10.5, fontWeight: "800" },
-  soonBadge: { paddingHorizontal: 9, paddingVertical: 5, borderRadius: 12 },
-  soonBadgeText: { fontSize: 10.5, fontWeight: "800" },
+  dateTile: { width: 44, height: 46, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  dateDay: { fontSize: 17, fontWeight: "800", lineHeight: 20 },
+  dateMonth: { fontSize: 9.5, fontWeight: "800", letterSpacing: 0.6 },
 
-  badge: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10 },
-  badgeText: { fontSize: 10, fontWeight: "700" },
+  personAvatar: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  personInitials: { fontSize: 14, fontWeight: "800" },
+  unreadDot: { position: "absolute", right: 0, top: 0, width: 12, height: 12, borderRadius: 6, borderWidth: 2, backgroundColor: "#ef4444" },
+
+  pill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 12 },
+  pillDot: { width: 6, height: 6, borderRadius: 3 },
+  pillText: { fontSize: 11, fontWeight: "800" },
+
+  emptyRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 18 },
+  emptyText: { fontSize: 13 },
+
+  statsRow: { flexDirection: "row", gap: 12, marginBottom: 12 },
+  statCard: { flex: 1, borderRadius: 18, borderWidth: 1, padding: 14 },
+  statIcon: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center", marginBottom: 12 },
+  statValue: { fontSize: 22, fontWeight: "800", letterSpacing: -0.4 },
+  statLabel: { fontSize: 12, marginTop: 2 },
+
+  reviewCard: { borderRadius: 18, borderWidth: 1, padding: 14, marginBottom: 20, gap: 8 },
+  reviewText: { fontSize: 14, lineHeight: 21 },
 
   activityRow: { flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 10, paddingVertical: 12 },
-  activityText: { flex: 1, fontSize: 13, fontWeight: "500" },
+  apptName: { fontSize: 14, fontWeight: "700" },
+  apptSub: { fontSize: 12, marginTop: 2 },
 });
 
 const m = StyleSheet.create({
