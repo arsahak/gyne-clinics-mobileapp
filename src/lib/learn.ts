@@ -14,17 +14,17 @@ export const ARTICLE_CATEGORIES: ArticleCategory[] = [
 
 const COVERS: Record<ArticleCategory, Article["cover"][]> = {
   Periods: [
-    { from: "#d13a8b", to: "#834d8b", icon: "CalendarHeart" },
-    { from: "#d13a8b", to: "#f27bc1", icon: "Flower2" },
+    { from: "#804898", to: "#207898", icon: "CalendarHeart" },
+    { from: "#804898", to: "#a67fb7", icon: "Flower2" },
   ],
-  Fertility: [{ from: "#217580", to: "#34a3a8", icon: "Sparkles" }],
-  Pregnancy: [{ from: "#b08d48", to: "#d13a8b", icon: "Baby" }],
-  Menopause: [{ from: "#834d8b", to: "#0a2342", icon: "Moon" }],
-  "Pelvic Health": [{ from: "#217580", to: "#0a2342", icon: "HeartPulse" }],
-  Wellness: [{ from: "#b08d48", to: "#217580", icon: "Leaf" }],
+  Fertility: [{ from: "#207898", to: "#34a3a8", icon: "Sparkles" }],
+  Pregnancy: [{ from: "#b08d48", to: "#804898", icon: "Baby" }],
+  Menopause: [{ from: "#207898", to: "#0a2342", icon: "Moon" }],
+  "Pelvic Health": [{ from: "#207898", to: "#0a2342", icon: "HeartPulse" }],
+  Wellness: [{ from: "#b08d48", to: "#207898", icon: "Leaf" }],
   Stories: [
-    { from: "#834d8b", to: "#d13a8b", icon: "MessageCircleHeart" },
-    { from: "#217580", to: "#834d8b", icon: "MessageCircleHeart" },
+    { from: "#207898", to: "#804898", icon: "MessageCircleHeart" },
+    { from: "#207898", to: "#207898", icon: "MessageCircleHeart" },
   ],
 };
 

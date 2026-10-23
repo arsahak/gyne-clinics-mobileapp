@@ -1,3 +1,4 @@
+import { HERO_GRADIENT } from "@/constants/brand";
 import { AdBanner } from "@/components";
 import { CycleRing } from "@/components/home/CycleRing";
 import { DoctorCard } from "@/components/doctors";
@@ -99,9 +100,9 @@ function buildSummary(tracker: TrackerData, account: Account | null, today: Date
 
 // What each phase usually means (same copy as the webapp's home).
 const PHASE_COPY: Record<string, { color: string; text: string }> = {
-  Menstrual: { color: "#d13a8b", text: "Rest and stay hydrated. Gentle movement can ease cramps." },
-  Follicular: { color: "#217580", text: "Energy often rises in this phase — a good time for new routines." },
-  Ovulation: { color: "#834d8b", text: "You're around your estimated ovulation day." },
+  Menstrual: { color: "#804898", text: "Rest and stay hydrated. Gentle movement can ease cramps." },
+  Follicular: { color: "#207898", text: "Energy often rises in this phase — a good time for new routines." },
+  Ovulation: { color: "#207898", text: "You're around your estimated ovulation day." },
   Luteal: { color: "#b08d48", text: "Some people notice bloating or mood changes before their period." },
 };
 
@@ -522,10 +523,10 @@ export default function HomeScreen() {
   const upcomingReminders = reminderItems.filter((i) => i.date >= startOfDay(today)).sort((a, b) => a.date.getTime() - b.date.getTime());
 
   const quickLinks = [
-    { label: "Calendar", body: "Your cycle by month", Icon: CalendarDays, color: "#d13a8b", bg: "#fce7f5", onPress: () => scrollRef.current?.scrollTo({ y: calendarY - 10, animated: true }) },
-    { label: "Cycle insights", body: "Trends and fertile window", Icon: ChartSpline, color: "#217580", bg: "#cff9f6", onPress: () => router.push("/(tabs)/insights") },
+    { label: "Calendar", body: "Your cycle by month", Icon: CalendarDays, color: "#804898", bg: "#f0e9f3", onPress: () => scrollRef.current?.scrollTo({ y: calendarY - 10, animated: true }) },
+    { label: "Cycle insights", body: "Trends and fertile window", Icon: ChartSpline, color: "#207898", bg: "#e4eff3", onPress: () => router.push("/(tabs)/insights") },
     { label: "Weight", body: "Track changes over time", Icon: Scale, color: "#b08d48", bg: "#f7f1e6", onPress: () => router.push("/(tabs)/insights") },
-    { label: "Baby growth", body: "From your scan reports", Icon: Baby, color: "#834d8b", bg: "#f5ebfa", onPress: () => router.push("/(tabs)/insights") },
+    { label: "Baby growth", body: "From your scan reports", Icon: Baby, color: "#207898", bg: "#e4eff3", onPress: () => router.push("/(tabs)/insights") },
   ];
 
   const sectionHeader = (title: string, onSeeAll: () => void) => (
@@ -572,7 +573,7 @@ export default function HomeScreen() {
         <Text style={[s.todayDate, { color: colors.textMuted }]}>{formatFullDate(today)}</Text>
 
         {/* ── Cycle hero ── */}
-        <LinearGradient colors={["#f27bc1", "#d13a8b", "#a82a72"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.hero}>
+        <LinearGradient colors={HERO_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.hero}>
           <View style={s.heroGlow} pointerEvents="none" />
           {prediction ? (
             <View style={s.heroRow}>
@@ -610,7 +611,7 @@ export default function HomeScreen() {
 
           <View style={s.cardBtns}>
             <Pressable style={s.addBtn} onPress={() => openAdd()}>
-              <Plus size={17} color="#d13a8b" />
+              <Plus size={17} color="#804898" />
               <Text style={s.addBtnText}>Log period</Text>
             </Pressable>
             {summary?.latestEntry && (
@@ -638,13 +639,13 @@ export default function HomeScreen() {
         {/* ── Stats ── */}
         <View style={s.statsRow}>
           {[
-            { Icon: Timer, label: "Avg. cycle", value: `${stats.averageCycle} days`, color: "#217580" },
-            { Icon: Droplet, label: "Avg. period", value: `${stats.averagePeriod} days`, color: "#d13a8b" },
+            { Icon: Timer, label: "Avg. cycle", value: `${stats.averageCycle} days`, color: "#207898" },
+            { Icon: Droplet, label: "Avg. period", value: `${stats.averagePeriod} days`, color: "#804898" },
             {
               Icon: Sparkles,
               label: "Fertile window",
               value: !prediction ? "—" : inFertile ? "Now" : fertileIn > 0 ? `In ${fertileIn}d` : format(prediction.fertileStart, "d MMM"),
-              color: "#834d8b",
+              color: "#207898",
             },
           ].map(({ Icon, label, value, color }) => (
             <View key={label} style={[s.stat, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -733,11 +734,11 @@ export default function HomeScreen() {
                 dayPhase === "period"
                   ? { bg: accent, text: "#fff", border: {} }
                   : dayPhase === "predicted"
-                    ? { bg: "#fce7f5", text: accent, border: { borderWidth: 1.5, borderColor: "#f27bc1", borderStyle: "dashed" as const } }
+                    ? { bg: "#f0e9f3", text: accent, border: { borderWidth: 1.5, borderColor: "#a67fb7", borderStyle: "dashed" as const } }
                     : dayPhase === "ovulation"
-                      ? { bg: "#834d8b", text: "#fff", border: {} }
+                      ? { bg: "#207898", text: "#fff", border: {} }
                       : dayPhase === "fertile"
-                        ? { bg: "#cff9f6", text: "#217580", border: {} }
+                        ? { bg: "#e4eff3", text: "#207898", border: {} }
                         : { bg: "transparent", text: cell.thisMonth ? colors.text : "#d1d5db", border: {} };
               const todayRing = isToday && dayPhase !== "period" ? { borderWidth: 2, borderColor: colors.text } : {};
 
@@ -754,9 +755,9 @@ export default function HomeScreen() {
           <View style={s.legend}>
             {[
               { label: "Period", dot: { backgroundColor: accent } },
-              { label: "Predicted", dot: { backgroundColor: "#fce7f5", borderWidth: 1.5, borderColor: "#f27bc1", borderStyle: "dashed" as const } },
-              { label: "Fertile", dot: { backgroundColor: "#9be7df" } },
-              { label: "Ovulation", dot: { backgroundColor: "#834d8b" } },
+              { label: "Predicted", dot: { backgroundColor: "#f0e9f3", borderWidth: 1.5, borderColor: "#a67fb7", borderStyle: "dashed" as const } },
+              { label: "Fertile", dot: { backgroundColor: "#c7dde5" } },
+              { label: "Ovulation", dot: { backgroundColor: "#207898" } },
             ].map((item) => (
               <View key={item.label} style={s.legendItem}>
                 <View style={[s.legendDot, item.dot]} />
@@ -866,9 +867,9 @@ export default function HomeScreen() {
         </View>
 
         {/* ── Disclaimer ── */}
-        <View style={[s.disclaimer, { backgroundColor: accentBg, borderColor: "#f7abd9" }]}>
+        <View style={[s.disclaimer, { backgroundColor: accentBg, borderColor: "#c6add1" }]}>
           <Text style={{ fontSize: 14, marginRight: 6 }}>ℹ️</Text>
-          <Text style={[s.disclaimerText, { color: "#834d8b" }]}>
+          <Text style={[s.disclaimerText, { color: "#207898" }]}>
             Predictions are estimates based on your logged dates, not medical advice or contraception.{" "}
             <Text style={{ fontWeight: "700" }}>Always consult a healthcare professional.</Text>
           </Text>
@@ -990,7 +991,7 @@ const s = StyleSheet.create({
   bellBadge: { position: "absolute", top: 8, right: 9, width: 9, height: 9, borderRadius: 4.5, backgroundColor: "#ef4444", borderWidth: 1.5, borderColor: "#fff" },
   todayDate: { fontSize: 13, fontWeight: "600", marginBottom: 16 },
 
-  cycleCard: { borderRadius: 24, padding: 24, marginBottom: 20, overflow: "hidden", minHeight: 188, shadowColor: "#d13a8b", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 16, elevation: 5 },
+  cycleCard: { borderRadius: 24, padding: 24, marginBottom: 20, overflow: "hidden", minHeight: 188, shadowColor: "#804898", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 16, elevation: 5 },
   dropletWatermark: { position: "absolute", right: -10, top: -20, opacity: 1 },
   cycleLabelPill: { alignSelf: "flex-start", backgroundColor: "rgba(255,255,255,0.18)", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
   cycleLabel: { color: "#fff", fontSize: 12, fontWeight: "700" },
@@ -999,7 +1000,7 @@ const s = StyleSheet.create({
   datePillText: { color: "#fff", fontSize: 12, fontWeight: "600" },
   cardBtns: { flexDirection: "row", gap: 10 },
   addBtn: { flex: 1, backgroundColor: "#fff", borderRadius: 13, paddingVertical: 11, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6 },
-  addBtnText: { color: "#d13a8b", fontWeight: "700", fontSize: 14 },
+  addBtnText: { color: "#804898", fontWeight: "700", fontSize: 14 },
   editBtn: { flex: 1, backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 13, paddingVertical: 11, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 6, borderWidth: 1, borderColor: "rgba(255,255,255,0.4)" },
   editBtnText: { color: "#fff", fontWeight: "700", fontSize: 14 },
 

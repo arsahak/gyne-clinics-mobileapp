@@ -1,4 +1,3 @@
-import { DOCTOR_ACCENT } from "@/constants/brand";
 import { STATE_LABEL, timeline } from "@/lib/consultation";
 import { getMyChats } from "@/lib/services/chats";
 import { getMyConsultations } from "@/lib/services/consultations";
@@ -50,7 +49,7 @@ export default function MessagesScreen() {
   const { colors, isDark } = useTheme();
   const { role } = useAuth();
   const router = useRouter();
-  const accent = role === "doctor" ? DOCTOR_ACCENT : colors.primary;
+  const accent = colors.primary;
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

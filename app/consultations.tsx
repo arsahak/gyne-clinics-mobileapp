@@ -268,7 +268,7 @@ function Receipt({ row, onClose }: { row: Row; onClose: () => void }) {
     <View style={[m.sheet, { backgroundColor: colors.surface }]}>
       <View style={[m.handle, { backgroundColor: colors.border }]} />
       <Text style={[m.title, { color: colors.text }]}>Receipt</Text>
-      <Text style={{ color: colors.textMuted, fontSize: 12.5, textAlign: "center", marginTop: 4, marginBottom: 16 }}>GyneClinics consultation receipt</Text>
+      <Text style={{ color: colors.textMuted, fontSize: 12.5, textAlign: "center", marginTop: 4, marginBottom: 16 }}>GyneX consultation receipt</Text>
       <View style={[s.row, s.total, { backgroundColor: colors.background }]}>
         <View style={s.row}>
           <ReceiptText size={16} color={colors.primary} />

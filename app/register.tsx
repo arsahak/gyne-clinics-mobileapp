@@ -1,4 +1,3 @@
-import { DOCTOR_ACCENT } from "@/constants/brand";
 import { register } from "@/lib/services/auth";
 import type { AppRole } from "@/lib/types";
 import { routeForAccount, useAuth } from "@/store/AuthContext";
@@ -10,7 +9,7 @@ import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, View
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 
-// A new, verified number chooses how it will use GyneClinics (same step as
+// A new, verified number chooses how it will use GyneX (same step as
 // the webapp's /register). The account is created with that role; the name
 // and the rest are asked in onboarding.
 
@@ -28,8 +27,7 @@ export default function RegisterScreen() {
   const [role, setRole] = useState<AppRole | null>(null);
   const [creating, setCreating] = useState(false);
 
-  const accentFor = (value: AppRole) => (value === "doctor" ? DOCTOR_ACCENT : colors.primary);
-  const accent = role ? accentFor(role) : colors.primary;
+  const accent = colors.primary;
 
   const create = async () => {
     if (!role || creating) return;
@@ -67,7 +65,7 @@ export default function RegisterScreen() {
       </View>
 
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
-        <Text style={[s.title, { color: colors.text }]}>How will you use GyneClinics?</Text>
+        <Text style={[s.title, { color: colors.text }]}>How will you use GyneX?</Text>
         <Text style={[s.sub, { color: colors.textMuted }]}>
           <Text style={{ color: colors.text, fontWeight: "700" }}>{phone}</Text> is verified. Choose one to continue. This can't be
           changed later.
@@ -76,7 +74,7 @@ export default function RegisterScreen() {
         <View accessibilityRole="radiogroup" style={s.list}>
           {ROLES.map(({ value, title, body }) => {
             const selected = role === value;
-            const tone = accentFor(value);
+            const tone = accent;
             const Icon = value === "doctor" ? Stethoscope : UserRound;
             return (
               <Pressable

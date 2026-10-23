@@ -238,7 +238,7 @@ export default function BookScreen() {
         else return fail("Payment couldn't start", started.message);
       } else {
         const { error: initError } = await initPaymentSheet({
-          merchantDisplayName: "GyneClinics",
+          merchantDisplayName: "GyneX",
           paymentIntentClientSecret: started.data.clientSecret,
           returnURL: "gyneclinics://stripe-redirect",
           allowsDelayedPaymentMethods: false,

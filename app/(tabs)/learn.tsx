@@ -187,7 +187,7 @@ function StoryViewer({
         {story.imageUrl ? (
           <Image source={{ uri: story.imageUrl }} style={StyleSheet.absoluteFillObject} resizeMode="cover" />
         ) : (
-          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "#7b3f6e" }]} />
+          <View style={[StyleSheet.absoluteFillObject, { backgroundColor: "#573167" }]} />
         )}
         <View style={sv.scrim} />
 
@@ -667,7 +667,7 @@ export default function LearnScreen() {
         {featured && (
           <View style={s.padH}>
             <Pressable
-              style={[s.featuredCard, { backgroundColor: "#7b3f6e" }]}
+              style={[s.featuredCard, { backgroundColor: "#573167" }]}
               onPress={() => openStoryViewer(stories, featuredIndex % stories.length)}
             >
               {featured.imageUrl && !failedImageIds.has(featured._id) && (

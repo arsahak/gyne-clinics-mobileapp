@@ -1,6 +1,5 @@
 import { Text } from "@/components";
 import { config } from "@/constants/config";
-import { DOCTOR_ACCENT } from "@/constants/brand";
 import { formatMoney } from "@/lib/locale/regions";
 import { deleteAccount } from "@/lib/services/auth";
 import { getMyDoctorProfile } from "@/lib/services/doctors";
@@ -78,8 +77,8 @@ export default function DoctorSettingsScreen() {
   const { colors, setMode, mode } = useTheme();
   const { logout, phone } = useAuth();
   const router = useRouter();
-  const accent = DOCTOR_ACCENT;
-  const accentBg = `${DOCTOR_ACCENT}18`;
+  const accent = colors.primary;
+  const accentBg = `${accent}18`;
   const [profile, setProfile] = useState<DoctorProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -279,7 +278,7 @@ export default function DoctorSettingsScreen() {
           <Trash2 size={15} color={colors.textMuted} />
           <Text variant="caption" color="textMuted">Delete account</Text>
         </Pressable>
-        <Text variant="caption" color="textMuted" align="center" style={s.version}>GyneClinics for Doctors · Version {config.appVersion}</Text>
+        <Text variant="caption" color="textMuted" align="center" style={s.version}>GyneX for Doctors · Version {config.appVersion}</Text>
       </ScrollView>
     </SafeAreaView>
   );

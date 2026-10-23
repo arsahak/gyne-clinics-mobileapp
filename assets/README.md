@@ -1,6 +1,6 @@
-# GyneClinics App — Assets
+# GyneX App — Assets
 
-This folder contains all static assets for the **GyneClinics** mobile application — a healthcare platform focused on expert women's care.
+This folder contains all static assets for the **GyneX** mobile application — a healthcare platform focused on expert women's care.
 
 ---
 
@@ -44,9 +44,9 @@ assets/
 
 ---
 
-## About GyneClinics
+## About GyneX
 
-**GyneClinics** is a healthcare mobile application designed to support women's health and wellness. Key features include:
+**GyneX** is a healthcare mobile application designed to support women's health and wellness. Key features include:
 
 - **Period Tracker** — Calendar-based cycle tracking with dot indicators
 - **Find a Specialist** — Search and connect with gynaecology specialists

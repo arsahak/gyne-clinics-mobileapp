@@ -1,5 +1,5 @@
+import { HERO_GRADIENT } from "@/constants/brand";
 import { AdBanner } from "@/components";
-import { DOCTOR_ACCENT } from "@/constants/brand";
 import type { ChatSummary } from "@/lib/chat";
 import { timeline } from "@/lib/consultation";
 import { formatMoney } from "@/lib/locale/regions";
@@ -88,8 +88,8 @@ export default function DoctorHomeScreen() {
   const { colors } = useTheme();
   const { account } = useAuth();
   const router = useRouter();
-  const accent = DOCTOR_ACCENT;
-  const accentBg = DOCTOR_ACCENT + "18";
+  const accent = colors.primary;
+  const accentBg = accent + "18";
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -225,7 +225,7 @@ export default function DoctorHomeScreen() {
         </View>
 
         {/* ── Hero card ── */}
-        <LinearGradient colors={["#2f9aa8", "#175a63"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.heroCard}>
+        <LinearGradient colors={HERO_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.heroCard}>
           <View style={s.dropletWatermark} pointerEvents="none">
             <Svg width={130} height={130} viewBox="0 0 24 24" fill="rgba(255,255,255,0.15)">
               <Path d="M12 2l7 8a9 9 0 1 1-14 0z" stroke="none" />
@@ -256,7 +256,7 @@ export default function DoctorHomeScreen() {
               value={Boolean(data?.online)}
               onValueChange={toggleOnline}
               disabled={savingOnline}
-              trackColor={{ true: "#7fe0d6", false: "rgba(255,255,255,0.35)" }}
+              trackColor={{ true: "#c6add1", false: "rgba(255,255,255,0.35)" }}
               thumbColor="#fff"
             />
           </View>

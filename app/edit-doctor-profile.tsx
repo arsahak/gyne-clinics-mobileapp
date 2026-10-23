@@ -1,4 +1,3 @@
-import { DOCTOR_ACCENT } from "@/constants/brand";
 import { getMyDoctorProfile, type MyDoctorChanges, type MyDoctorProfile, updateMyDoctorProfile } from "@/lib/services/doctors";
 import { uploadAvatar } from "@/lib/services/patient";
 import { useAuth } from "@/store/AuthContext";
@@ -45,8 +44,8 @@ export default function EditDoctorProfileScreen() {
   const { colors } = useTheme();
   const { refresh } = useAuth();
   const router = useRouter();
-  const accent = DOCTOR_ACCENT;
-  const accentBg = `${DOCTOR_ACCENT}18`;
+  const accent = colors.primary;
+  const accentBg = `${accent}18`;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);

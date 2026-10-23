@@ -1,4 +1,3 @@
-import { DOCTOR_ACCENT } from "@/constants/brand";
 import { routeForAccount, useAuth } from "@/store/AuthContext";
 import { useTheme } from "@/theme";
 import { useRouter } from "expo-router";
@@ -28,8 +27,8 @@ export default function DoctorPendingScreen() {
   const { colors } = useTheme();
   const { approvalStatus, refresh, logout } = useAuth();
   const router = useRouter();
-  const accent     = DOCTOR_ACCENT;
-  const accentLite = DOCTOR_ACCENT + "1A";
+  const accent     = colors.primary;
+  const accentLite = accent + "1A";
 
   const [checking, setChecking] = useState(false);
 

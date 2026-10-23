@@ -1,5 +1,4 @@
 import { Text } from "@/components";
-import { DOCTOR_ACCENT } from "@/constants/brand";
 import { BOOKING_WINDOWS, type DoctorSchedule, MIN_NOTICE, scheduleOf, SLOT_LENGTHS, type TimeRange } from "@/lib/availability";
 import { REGION_LIST } from "@/lib/locale/regions";
 import { useRegionalPricing } from "@/lib/pricing";
@@ -67,8 +66,8 @@ function dayFromRanges(ranges: TimeRange[] | undefined): DayState {
 export default function DoctorAvailabilityScreen() {
   const { colors } = useTheme();
   const { fee } = useRegionalPricing();
-  const accent = DOCTOR_ACCENT;
-  const accentBg = `${DOCTOR_ACCENT}18`;
+  const accent = colors.primary;
+  const accentBg = `${accent}18`;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);

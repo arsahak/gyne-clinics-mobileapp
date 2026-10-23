@@ -1,4 +1,3 @@
-import { DOCTOR_ACCENT } from "@/constants/brand";
 import { api } from "@/lib/api";
 import { acceptConsent } from "@/lib/services/auth";
 import { routeForAccount, useAuth } from "@/store/AuthContext";
@@ -129,8 +128,8 @@ export default function DoctorProfileScreen() {
   const { colors } = useTheme();
   const { account, setAccount } = useAuth();
   const router = useRouter();
-  const accent     = DOCTOR_ACCENT;
-  const accentLite = DOCTOR_ACCENT + "1A";
+  const accent     = colors.primary;
+  const accentLite = accent + "1A";
 
   // Profile saved (e.g. on the webapp) but consent not given yet: only the consent step is left.
   const consentOnly = account?.nextStep === "consent";

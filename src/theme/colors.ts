@@ -1,5 +1,5 @@
 // ============================================================
-//  GyneClinics Brand Palette — matches website globals.css
+//  GyneX Brand Palette — the client logo's purple and teal
 // ============================================================
 
 export const palette = {
@@ -19,44 +19,31 @@ export const palette = {
   zinc900: "#18181B",
   zinc950: "#09090B",
 
-  // ── Primary: Teal/Cyan (#217580) ──
-  primary50:  "#effefc",
-  primary100: "#cff9f6",
-  primary200: "#a0f0eb",
-  primary300: "#68e2dd",
-  primary400: "#34cac6",
-  primary500: "#217580", // Base
-  primary600: "#1a5d66",
-  primary700: "#164b52",
-  primary800: "#143e44",
-  primary900: "#133439",
-  primary950: "#082125",
+  // ── Brand purple (#804898): main colour for patients and doctors ──
+  purple50:  "#f9f6fa",
+  purple100: "#f0e9f3",
+  purple200: "#dfd1e5",
+  purple300: "#c6add1",
+  purple400: "#a67fb7",
+  purple500: "#804898", // Base
+  purple600: "#6c3c80",
+  purple700: "#573167",
+  purple800: "#452752",
+  purple900: "#361e40",
+  purple950: "#24142b",
 
-  // ── Secondary: Purple/Mauve (#834D8B) ──
-  secondary50:  "#fbf6fd",
-  secondary100: "#f5ebfa",
-  secondary200: "#ebd6f4",
-  secondary300: "#debceb",
-  secondary400: "#cc9bdf",
-  secondary500: "#834d8b", // Base
-  secondary600: "#6d3a73",
-  secondary700: "#5a2e5e",
-  secondary800: "#4b264d",
-  secondary900: "#3e223f",
-  secondary950: "#29102a",
-
-  // ── Accent: Pink/Magenta (#D13A8B) ──
-  accent50:  "#fdf2f9",
-  accent100: "#fce7f5",
-  accent200: "#fad0eb",
-  accent300: "#f7abd9",
-  accent400: "#f27bc1",
-  accent500: "#d13a8b", // Base
-  accent600: "#b0266e",
-  accent700: "#8e1d56",
-  accent800: "#761b49",
-  accent900: "#621a3f",
-  accent950: "#3d0a23",
+  // ── Brand teal (#207898): second brand colour ──
+  teal50:  "#f4f8fa",
+  teal100: "#e4eff3",
+  teal200: "#c7dde5",
+  teal300: "#9bc2d1",
+  teal400: "#63a0b7",
+  teal500: "#207898", // Base
+  teal600: "#1b6580",
+  teal700: "#165267",
+  teal800: "#114152",
+  teal900: "#0d3240",
+  teal950: "#09222b",
 
   // Semantic
   red500:   "#ef4444",
@@ -65,9 +52,9 @@ export const palette = {
 } as const;
 
 // ── Token type ──────────────────────────────────────────────────────────────
-// primary   = Pink/Magenta #d13a8b  ← MAIN brand colour
-// secondary = Purple       #834d8b
-// teal      = Teal         #217580  ← supporting colour
+// primary   = Purple #804898  ← MAIN brand colour (patients and doctors)
+// secondary = Teal   #207898  ← second brand colour
+// teal      = Teal   #207898  ← supporting UI (ovulation, badges)
 export type ThemeColors = {
   background: string;
   surface: string;
@@ -75,17 +62,17 @@ export type ThemeColors = {
   border: string;
   text: string;
   textMuted: string;
-  // Primary — Pink #d13a8b
+  // Primary — Purple #804898
   primary: string;
   primaryLight: string;
   primaryDark: string;
   primaryText: string;
-  // Secondary — Purple #834d8b
+  // Secondary — Teal #207898
   secondary: string;
   secondaryLight: string;
   secondaryDark: string;
   secondaryText: string;
-  // Teal — supporting #217580
+  // Teal — #207898
   teal: string;
   tealLight: string;
   tealText: string;
@@ -103,21 +90,21 @@ export const lightColors: ThemeColors = {
   text:            palette.zinc900,
   textMuted:       palette.zinc500,
 
-  // 🩷 Primary = Pink
-  primary:      palette.accent500,    // #d13a8b
-  primaryLight: palette.accent100,    // #fce7f5
-  primaryDark:  palette.accent700,    // #8e1d56
+  // Primary = Purple
+  primary:      palette.purple500,
+  primaryLight: palette.purple100,
+  primaryDark:  palette.purple700,
   primaryText:  palette.white,
 
-  // 💜 Secondary = Purple
-  secondary:      palette.secondary500,
-  secondaryLight: palette.secondary100,
-  secondaryDark:  palette.secondary700,
+  // Secondary = Teal
+  secondary:      palette.teal500,
+  secondaryLight: palette.teal100,
+  secondaryDark:  palette.teal700,
   secondaryText:  palette.white,
 
-  // 🩵 Teal = supporting
-  teal:      palette.primary500,      // #217580
-  tealLight: palette.primary100,      // #cff9f6
+  // Teal
+  teal:      palette.teal500,
+  tealLight: palette.teal100,
   tealText:  palette.white,
 
   danger:  palette.red500,
@@ -133,22 +120,22 @@ export const darkColors: ThemeColors = {
   text:            palette.zinc50,
   textMuted:       palette.zinc400,
 
-  // 🩷 Primary = Pink (slightly lighter on dark)
-  primary:      palette.accent400,    // #f27bc1
-  primaryLight: "#2e0e1e",
-  primaryDark:  palette.accent200,
+  // Primary = Purple (lighter on dark)
+  primary:      palette.purple400,
+  primaryLight: "#2a1d30",
+  primaryDark:  palette.purple200,
   primaryText:  palette.white,
 
-  // 💜 Secondary = Purple
-  secondary:      palette.secondary400,
-  secondaryLight: "#2a1a2e",
-  secondaryDark:  palette.secondary200,
+  // Secondary = Teal
+  secondary:      palette.teal400,
+  secondaryLight: "#16303a",
+  secondaryDark:  palette.teal200,
   secondaryText:  palette.white,
 
-  // 🩵 Teal
-  teal:      palette.primary400,      // #34cac6
-  tealLight: "#1a3a3e",
-  tealText:  palette.primary950,
+  // Teal
+  teal:      palette.teal400,
+  tealLight: "#16303a",
+  tealText:  palette.teal950,
 
   danger:  palette.red500,
   success: palette.green500,

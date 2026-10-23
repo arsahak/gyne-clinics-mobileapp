@@ -1,4 +1,3 @@
-import { DOCTOR_ACCENT } from "@/constants/brand";
 import { timeline } from "@/lib/consultation";
 import { getMyChats } from "@/lib/services/chats";
 import { getMyConsultations } from "@/lib/services/consultations";
@@ -50,8 +49,8 @@ function SearchIcon({ color }: { color: string }) {
 export default function DoctorPatientsScreen() {
   const { colors } = useTheme();
   const router = useRouter();
-  const accent = DOCTOR_ACCENT;
-  const accentBg = DOCTOR_ACCENT + "18";
+  const accent = colors.primary;
+  const accentBg = accent + "18";
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);

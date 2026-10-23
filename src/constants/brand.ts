@@ -1,7 +1,8 @@
-// Brand colours used outside the theme (same as the webapp's lib/brand.ts).
+// Brand colours used outside the theme, from the client logo:
+// purple #804898 and teal #207898.
 
-/** Pink → plum gradient behind the splash and the login hero. */
-export const BRAND_GRADIENT = ["#f27bc1", "#d13a8b", "#834d8b"] as const;
+/** Purple → teal gradient behind the splash and the login hero. */
+export const BRAND_GRADIENT = ["#a67fb7", "#804898", "#207898"] as const;
 
-/** Doctor accounts use this accent instead of the patient pink. */
-export const DOCTOR_ACCENT = "#217580";
+/** Purple card at the top of the patient and doctor home screens. */
+export const HERO_GRADIENT = ["#a67fb7", "#804898", "#573167"] as const;

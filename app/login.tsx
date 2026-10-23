@@ -25,7 +25,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { LinearGradient } from "expo-linear-gradient";
 import { StatusBar } from "expo-status-bar";
 import Svg, { Circle, Path } from "react-native-svg";
-import { LotusArt } from "@/components/brand/Lotus";
+import { BrandIcon } from "@/components/brand/Logo";
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 function ChevronDownIcon({ color }: { color: string }) {
@@ -131,7 +131,7 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView edges={["bottom"]} style={[s.safe, { backgroundColor: colors.background }]}>
-      {/* Light status bar text on the pink hero. */}
+      {/* Light status bar text on the brand hero. */}
       <StatusBar style="light" />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <ScrollView
@@ -150,9 +150,9 @@ export default function LoginScreen() {
             <View style={[s.glow, { top: -70, right: -60, width: 220, height: 220 }]} pointerEvents="none" />
             <View style={[s.glow, { bottom: 10, left: -80, width: 180, height: 180, opacity: 0.6 }]} pointerEvents="none" />
 
-            {/* Lotus art above the headline */}
+            {/* App icon above the headline */}
             <View style={s.art}>
-              <LotusArt />
+              <BrandIcon height={92} tone="white" animated />
             </View>
 
             <Text style={s.heroTitle}>Women's health,{"\n"}in your pocket.</Text>
@@ -354,7 +354,7 @@ const s = StyleSheet.create({
     overflow: "hidden",
   },
   glow: { position: "absolute", borderRadius: 999, backgroundColor: "rgba(255,255,255,0.13)" },
-  art: { alignSelf: "center", marginTop: 6 },
+  art: { alignSelf: "center", marginTop: 14 },
   heroTitle: { color: "#fff", fontSize: 30, fontWeight: "900", lineHeight: 36, letterSpacing: -0.5, marginTop: 10, textAlign: "center" },
   heroText: { color: "rgba(255,255,255,0.88)", fontSize: 14, lineHeight: 21, marginTop: 10, maxWidth: 330, textAlign: "center", alignSelf: "center" },
 

@@ -4,10 +4,10 @@ import { StatusBar } from "expo-status-bar";
 import { ShieldCheck } from "lucide-react-native";
 import { useEffect, useRef, useState } from "react";
 import { AccessibilityInfo, Animated, Easing, StyleSheet, Text, View } from "react-native";
-import { LotusBloom } from "@/components/brand/Lotus";
+import { BrandIcon } from "@/components/brand/Logo";
 
 // Launch screen in the same brand gradient as the login hero.
-// The lotus blooms, the name and promise follow, and four dots below pulse
+// The icon settles in, the name and promise follow, and four dots below pulse
 // in turn — one for each phase of the cycle the app helps track.
 
 const SHOW_MS = 2600;
@@ -22,6 +22,7 @@ export function AppSplashScreen({ onFinish }: Props) {
   finish.current = onFinish;
 
   const screen = useRef(new Animated.Value(1)).current;
+  const logo   = useRef(new Animated.Value(0)).current;
   const text   = useRef(new Animated.Value(0)).current;
   const footer = useRef(new Animated.Value(0)).current;
   const dots   = useRef(PHASES.map(() => new Animated.Value(0.35))).current;
@@ -36,6 +37,7 @@ export function AppSplashScreen({ onFinish }: Props) {
     if (reduceMotion === null) return;
 
     if (reduceMotion) {
+      logo.setValue(1);
       text.setValue(1);
       footer.setValue(1);
       const t = setTimeout(() => finish.current(), 900);
@@ -43,6 +45,7 @@ export function AppSplashScreen({ onFinish }: Props) {
     }
 
     const ease = Easing.out(Easing.cubic);
+    Animated.spring(logo, { toValue: 1, friction: 7, tension: 50, useNativeDriver: true }).start();
     Animated.sequence([
       Animated.delay(650),
       Animated.timing(text, { toValue: 1, duration: 520, easing: ease, useNativeDriver: true }),
@@ -76,7 +79,7 @@ export function AppSplashScreen({ onFinish }: Props) {
       clearTimeout(done);
       pulse.stop();
     };
-  }, [reduceMotion, dots, footer, screen, text]);
+  }, [reduceMotion, dots, footer, logo, screen, text]);
 
   const rise = (v: Animated.Value, from = 14) => ({
     opacity: v,
@@ -87,7 +90,7 @@ export function AppSplashScreen({ onFinish }: Props) {
     <Animated.View
       style={[s.wrap, { opacity: screen }]}
       accessible
-      accessibilityLabel="GyneClinics. Women's health, in your pocket. Loading"
+      accessibilityLabel="GyneX. Women's health, in your pocket. Loading"
     >
       <StatusBar style="light" />
       <LinearGradient colors={BRAND_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />
@@ -95,10 +98,12 @@ export function AppSplashScreen({ onFinish }: Props) {
       <View style={[s.glow, { bottom: 120, left: -110, width: 240, height: 240, opacity: 0.55 }]} pointerEvents="none" />
 
       <View style={s.center}>
-        <LotusBloom width={196} still={reduceMotion === true} />
+        <Animated.View style={{ opacity: logo, transform: [{ scale: logo.interpolate({ inputRange: [0, 1], outputRange: [0.86, 1] }) }] }}>
+          <BrandIcon height={130} tone="white" animated />
+        </Animated.View>
 
         <Animated.View style={[s.textBlock, rise(text)]}>
-          <Text style={s.appName}>GyneClinics</Text>
+          <Text style={s.appName}>GyneX</Text>
           <Text style={s.tagline}>Women's health, in your pocket.</Text>
         </Animated.View>
 
@@ -126,13 +131,14 @@ const s = StyleSheet.create({
     zIndex: 999,
     overflow: "hidden",
   },
+
   glow: { position: "absolute", borderRadius: 999, backgroundColor: "rgba(255,255,255,0.12)" },
 
   center: { flex: 1, alignItems: "center", justifyContent: "center", paddingBottom: 30 },
 
   textBlock: { alignItems: "center", marginTop: 22 },
-  appName: { color: "#fff", fontSize: 36, fontWeight: "900", letterSpacing: -0.6 },
-  tagline: { color: "rgba(255,255,255,0.86)", fontSize: 15, fontWeight: "500", marginTop: 6, letterSpacing: 0.1 },
+  appName: { color: "#fff", fontSize: 34, fontWeight: "900", letterSpacing: -0.5 },
+  tagline: { color: "rgba(255,255,255,0.9)", fontSize: 15, fontWeight: "500", marginTop: 4, letterSpacing: 0.1 },
 
   dots: { flexDirection: "row", gap: 10, marginTop: 34 },
   dot: { width: 8, height: 8, borderRadius: 4, backgroundColor: "#fff" },

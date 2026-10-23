@@ -23,9 +23,9 @@ export function storyToArticle(story: SubmittedStory): Article {
     format: "story",
     readMinutes: Math.max(1, Math.ceil(words / 200)),
     author: story.anonymous ? "Anonymous" : story.authorName || "Community member",
-    authorRole: `Community story · ${story.topic} · Approved by GyneClinics`,
+    authorRole: `Community story · ${story.topic} · Approved by GyneX`,
     publishedAt: story.publishedAt ?? story.createdAt,
-    cover: { from: "#765885", to: "#cc619d", icon: "MessageCircleHeart" },
+    cover: { from: "#6c3c80", to: "#a67fb7", icon: "MessageCircleHeart" },
     image: story.imageUrl || undefined,
     // Paragraphs are separated by blank lines.
     sections: body

@@ -1,14 +1,15 @@
 {
   "expo": {
-    "name": "GyneClinics",
+    "name": "GyneX",
     "slug": "gyneclinics-mobile",
     "version": "1.0.0",
     "scheme": "gyneclinics",
     "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
-      "backgroundColor": "#d13a8b"
+      "backgroundColor": "#804898"
     },
     "assetBundlePatterns": [
       "**/*"
@@ -19,7 +20,8 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#d13a8b"
+        "foregroundImage": "./assets/images/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
       },
       "package": "com.gyneclinics.mobile",
       "edgeToEdgeEnabled": true
@@ -33,21 +35,21 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#d13a8b"
+          "backgroundColor": "#804898"
         }
       ],
       "expo-asset",
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow GyneClinics to access your photos so you can choose a profile picture or attach an image.",
-          "cameraPermission": "Allow GyneClinics to use your camera so you can take a profile picture."
+          "photosPermission": "Allow GyneX to access your photos so you can choose a profile picture or attach an image.",
+          "cameraPermission": "Allow GyneX to use your camera so you can take a profile picture."
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Allow GyneClinics to use your location so consultation pricing can be matched to your region."
+          "locationWhenInUsePermission": "Allow GyneX to use your location so consultation pricing can be matched to your region."
         }
       ],
       [
@@ -60,8 +62,8 @@
       [
         "@twilio/video-react-native-sdk",
         {
-          "cameraPermission": "Allow GyneClinics to use your camera for video consultations with your doctor.",
-          "microphonePermission": "Allow GyneClinics to use your microphone for video consultations with your doctor."
+          "cameraPermission": "Allow GyneX to use your camera for video consultations with your doctor.",
+          "microphonePermission": "Allow GyneX to use your microphone for video consultations with your doctor."
         }
       ],
       "expo-build-properties"
@@ -74,7 +76,7 @@
       "router": {
         "origin": false
       },
-      "apiUrl": "http://localhost:8000"
+      "apiUrl": "https://api.gyneclinics.com"
     }
   }
 }

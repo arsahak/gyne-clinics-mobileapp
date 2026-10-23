@@ -1,0 +1,27 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "local"
+  },
+  "build": {
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.gyneclinics.com",
+        "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51UEOiyIGKMcvpUnF0Do5bhe0MWQ0mn3fJZBmt93eNpybEzyaAdtCHxw8Xmp5m7YnwwdkslCsVs5jE216xMVBSF2D004qyWs4jp"
+      }
+    },
+    "production": {
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://api.gyneclinics.com",
+        "EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY": "pk_test_51UEOiyIGKMcvpUnF0Do5bhe0MWQ0mn3fJZBmt93eNpybEzyaAdtCHxw8Xmp5m7YnwwdkslCsVs5jE216xMVBSF2D004qyWs4jp"
+      }
+    }
+  }
+}

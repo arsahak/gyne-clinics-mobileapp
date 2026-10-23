@@ -1,4 +1,3 @@
-import { DOCTOR_ACCENT } from "@/constants/brand";
 import { describeBlocked, scanForContactDetails } from "@/lib/chat-guard";
 import { messagingFor, STATE_LABEL, timeline } from "@/lib/consultation";
 import { getDoctorChat, getPatientChat, sendMessage } from "@/lib/services/chats";
@@ -35,7 +34,7 @@ const POLL_MS = 5_000;
 // Same reasons as the webapp's "Report a problem".
 const REPORT_REASONS = [
   { value: "medical_concern", label: "Unsafe or wrong medical advice" },
-  { value: "off_platform", label: "Asked me to talk or pay outside GyneClinics" },
+  { value: "off_platform", label: "Asked me to talk or pay outside GyneX" },
   { value: "no_reply", label: "Didn't reply to me" },
   { value: "behaviour", label: "Rude or inappropriate" },
   { value: "payment", label: "Problem with a payment" },
@@ -100,7 +99,7 @@ export default function ConsultationScreen() {
   const scrollRef = useRef<ScrollView>(null);
 
   const isPatient = role !== "doctor";
-  const accent = isPatient ? colors.primary : DOCTOR_ACCENT;
+  const accent = colors.primary;
 
   const [loading, setLoading] = useState(true);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -177,7 +176,7 @@ export default function ConsultationScreen() {
     if (!text || sending) return;
     const blocked = scanForContactDetails(text);
     if (blocked.length) {
-      Alert.alert("Contact details aren't allowed", `Please remove ${describeBlocked(blocked)}. Keep the conversation inside GyneClinics.`);
+      Alert.alert("Contact details aren't allowed", `Please remove ${describeBlocked(blocked)}. Keep the conversation inside GyneX.`);
       return;
     }
     setSending(true);

@@ -106,9 +106,9 @@ export default function InsightsScreen() {
       >
         <View style={s.padH}>
           {/* D5: standing disclaimer, must stay visible on every Insights screen */}
-          <View style={[s.disclaimer, { backgroundColor: accentBg, borderColor: "#f7abd9" }]}>
+          <View style={[s.disclaimer, { backgroundColor: accentBg, borderColor: "#c6add1" }]}>
             <Text style={{ fontSize: 14, marginRight: 6 }}>ℹ️</Text>
-            <Text style={[s.disclaimerText, { color: "#834d8b" }]}>
+            <Text style={[s.disclaimerText, { color: "#207898" }]}>
               These insights are based on the data you enter and are informational only.{" "}
               <Text style={{ fontWeight: "700" }}>They are not a medical diagnosis — always consult a healthcare professional.</Text>
             </Text>

@@ -8,8 +8,6 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { DOCTOR_ACCENT } from "@/constants/brand";
-import { useAuth } from "@/store/AuthContext";
 import { useTheme } from "@/theme";
 import { NavIcon, NavIconName } from "./NavIcon";
 
@@ -95,10 +93,9 @@ function TabItem({ icon, label, isActive, activeColor, inactiveColor, onPress }:
 // ── Bar ───────────────────────────────────────────────────────────────────────
 export function BottomNavBar({ state, navigation }: BottomTabBarProps) {
   const { colors } = useTheme();
-  const { role }    = useAuth();
   const insets      = useSafeAreaInsets();
-  // Doctor accounts use the teal doctor accent everywhere, including their own tab bar.
-  const ACTIVE_COLOR = role === "doctor" ? DOCTOR_ACCENT : colors.primary;
+  // Patients and doctors share the brand colour.
+  const ACTIVE_COLOR = colors.primary;
 
   // Sliding indicator — moves to the active tab. Tab count can vary between
   // the patient and doctor tab bars, so it's derived from the route list.

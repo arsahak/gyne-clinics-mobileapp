@@ -14,7 +14,7 @@ type Colors = ReturnType<typeof useTheme>["colors"];
 
 export const AVAILABILITY: Record<Availability, { label: string; color: string }> = {
   online: { label: "Online now", color: "#10b981" },
-  today: { label: "Available today", color: "#217580" },
+  today: { label: "Available today", color: "#207898" },
   this_week: { label: "This week", color: "#b08d48" },
   away: { label: "Away", color: "#71717a" },
 };
@@ -88,7 +88,7 @@ function consultationLabel(c: ConsultationTimeline) {
     case "active":
       return { text: "Consultation in progress", bg: "#10b981", color: "#fff" };
     case "upcoming":
-      return { text: `Booked · ${format(c.startsAt, "EEE d MMM, HH:mm")}`, bg: "#d13a8b", color: "#fff" };
+      return { text: `Booked · ${format(c.startsAt, "EEE d MMM, HH:mm")}`, bg: "#804898", color: "#fff" };
     case "follow_up":
       return { text: `Free follow-up until ${format(c.followUpEndsAt, "d MMM")}`, bg: "#b08d48", color: "#fff" };
     default:
@@ -189,7 +189,7 @@ function consultationShort(c: ConsultationTimeline) {
     case "active":
       return { text: "In progress", bg: "#10b981", color: "#fff" };
     case "upcoming":
-      return { text: `Booked · ${format(c.startsAt, "d MMM")}`, bg: "#d13a8b", color: "#fff" };
+      return { text: `Booked · ${format(c.startsAt, "d MMM")}`, bg: "#804898", color: "#fff" };
     case "follow_up":
       return { text: "Free follow-up", bg: "#b08d48", color: "#fff" };
     default:

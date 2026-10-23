@@ -15,7 +15,7 @@ export function CycleRing({
   size = 150,
   track = "rgba(255,255,255,0.22)",
   period = "#ffffff",
-  fertile = "#9be7df",
+  fertile = "#c7dde5",
   ovulation = "#e9d5ff",
   marker = "#ffffff",
   children,
@@ -68,7 +68,7 @@ export function CycleRing({
           />
         </G>
         <Circle cx={ov.x} cy={ov.y} r={stroke / 2 - 1} fill={ovulation} />
-        <Circle cx={today.x} cy={today.y} r={stroke / 2 + 3} fill="#d13a8b" stroke={marker} strokeWidth={3} />
+        <Circle cx={today.x} cy={today.y} r={stroke / 2 + 3} fill="#804898" stroke={marker} strokeWidth={3} />
       </Svg>
       <View style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center" }}>{children}</View>
     </View>

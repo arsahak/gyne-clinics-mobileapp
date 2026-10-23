@@ -571,7 +571,7 @@ export default function SettingsScreen() {
           align="center"
           style={s.version}
         >
-          GyneClinics · Version {config.appVersion}
+          GyneX · Version {config.appVersion}
         </Text>
       </ScrollView>
     </SafeAreaView>
