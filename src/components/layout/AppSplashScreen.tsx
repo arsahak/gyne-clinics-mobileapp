@@ -90,7 +90,7 @@ export function AppSplashScreen({ onFinish }: Props) {
     <Animated.View
       style={[s.wrap, { opacity: screen }]}
       accessible
-      accessibilityLabel="Gynex. Empowering and Redefining Women’s Health Care. Loading"
+      accessibilityLabel="Gyne. Empowering and Redefining Women’s Health Care. Loading"
     >
       <StatusBar style="light" />
       <LinearGradient colors={BRAND_GRADIENT} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} />

@@ -135,7 +135,7 @@ export function submitReview(input: { doctorId: string; rating: number; text: st
   return api("/reviews", { method: "POST", body: { doctorId: input.doctorId, rating: input.rating, text: input.text.trim() } });
 }
 
-/** Reports a doctor to the Gynex team. */
+/** Reports a doctor to the Gyne team. */
 export function reportDoctor(input: { doctorId: string; reason: string; details: string }) {
   return api("/reports", { method: "POST", body: { doctorId: input.doctorId, reason: input.reason, details: input.details.trim() } });
 }

@@ -43,7 +43,7 @@ const MY_STATUS: Record<MyReview["status"], { label: string; hint: string }> = {
 
 const REPORT_REASONS = [
   { value: "medical_concern", label: "Unsafe or wrong medical advice" },
-  { value: "off_platform", label: "Asked me to talk or pay outside Gynex" },
+  { value: "off_platform", label: "Asked me to talk or pay outside Gyne" },
   { value: "no_reply", label: "Didn't reply to me" },
   { value: "behaviour", label: "Rude or inappropriate" },
   { value: "payment", label: "Problem with a payment" },
@@ -442,7 +442,7 @@ export default function DoctorProfileScreen() {
         <View style={[m.sheet, { backgroundColor: colors.surface }]}>
           <View style={[m.handle, { backgroundColor: colors.border }]} />
           <Text style={[m.title, { color: colors.text }]}>Report a problem</Text>
-          <Text style={[m.sub, { color: colors.textMuted }]}>Tell the Gynex team what happened with {doctor.name}. Reports are private.</Text>
+          <Text style={[m.sub, { color: colors.textMuted }]}>Tell the Gyne team what happened with {doctor.name}. Reports are private.</Text>
           <View style={[s.row, { flexWrap: "wrap", gap: 6, marginBottom: 14 }]}>
             {REPORT_REASONS.map((r) => {
               const on = reason === r.value;

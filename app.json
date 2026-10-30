@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Gynex",
+    "name": "Gyne",
     "slug": "gynex",
     "owner": "gyneclinics-ltd",
     "version": "1.0.0",
@@ -55,14 +55,14 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Gynex to access your photos so you can choose a profile picture or attach an image.",
-          "cameraPermission": "Allow Gynex to use your camera for video consultations with your doctor and to take a profile picture."
+          "photosPermission": "Allow Gyne to access your photos so you can choose a profile picture or attach an image.",
+          "cameraPermission": "Allow Gyne to use your camera for video consultations with your doctor and to take a profile picture."
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Allow Gynex to use your location so consultation pricing can be matched to your region."
+          "locationWhenInUsePermission": "Allow Gyne to use your location so consultation pricing can be matched to your region."
         }
       ],
       [
@@ -75,8 +75,8 @@
       [
         "@twilio/video-react-native-sdk",
         {
-          "cameraPermission": "Allow Gynex to use your camera for video consultations with your doctor and to take a profile picture.",
-          "microphonePermission": "Allow Gynex to use your microphone for video consultations with your doctor."
+          "cameraPermission": "Allow Gyne to use your camera for video consultations with your doctor and to take a profile picture.",
+          "microphonePermission": "Allow Gyne to use your microphone for video consultations with your doctor."
         }
       ],
       "expo-build-properties"

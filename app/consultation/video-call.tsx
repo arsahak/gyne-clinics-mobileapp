@@ -64,7 +64,7 @@ export default function VideoCallScreen() {
         if (cancelled) return;
         Alert.alert(
           "Camera and microphone needed",
-          "Allow Gynex to use your camera and microphone in Settings, then try again.",
+          "Allow Gyne to use your camera and microphone in Settings, then try again.",
           [
             { text: "Not now", style: "cancel", onPress: () => router.back() },
             { text: "Open Settings", onPress: () => { void Linking.openSettings(); router.back(); } },

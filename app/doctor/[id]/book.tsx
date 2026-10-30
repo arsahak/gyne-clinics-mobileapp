@@ -257,7 +257,7 @@ export default function BookScreen() {
           setWorking("Opening secure payment…");
         }
         const { error: initError } = await initPaymentSheet({
-          merchantDisplayName: "Gynex",
+          merchantDisplayName: "Gyne",
           paymentIntentClientSecret: started.data.clientSecret,
           returnURL: "gyneclinics://stripe-redirect",
           allowsDelayedPaymentMethods: false,

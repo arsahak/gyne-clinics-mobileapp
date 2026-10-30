@@ -35,7 +35,7 @@ const POLL_MS = 5_000;
 // Same reasons as the webapp's "Report a problem".
 const REPORT_REASONS = [
   { value: "medical_concern", label: "Unsafe or wrong medical advice" },
-  { value: "off_platform", label: "Asked me to talk or pay outside Gynex" },
+  { value: "off_platform", label: "Asked me to talk or pay outside Gyne" },
   { value: "no_reply", label: "Didn't reply to me" },
   { value: "behaviour", label: "Rude or inappropriate" },
   { value: "payment", label: "Problem with a payment" },
@@ -177,7 +177,7 @@ export default function ConsultationScreen() {
     if (!text || sending) return;
     const blocked = scanForContactDetails(text);
     if (blocked.length) {
-      Alert.alert("Contact details aren't allowed", `Please remove ${describeBlocked(blocked)}. Keep the conversation inside Gynex.`);
+      Alert.alert("Contact details aren't allowed", `Please remove ${describeBlocked(blocked)}. Keep the conversation inside Gyne.`);
       return;
     }
     setSending(true);
