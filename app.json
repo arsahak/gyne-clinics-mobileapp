@@ -56,7 +56,7 @@
         "expo-image-picker",
         {
           "photosPermission": "Allow Gynex to access your photos so you can choose a profile picture or attach an image.",
-          "cameraPermission": "Allow Gynex to use your camera so you can take a profile picture."
+          "cameraPermission": "Allow Gynex to use your camera for video consultations with your doctor and to take a profile picture."
         }
       ],
       [
@@ -69,13 +69,13 @@
         "@stripe/stripe-react-native",
         {
           "merchantIdentifier": "",
-          "enableGooglePay": false
+          "enableGooglePay": true
         }
       ],
       [
         "@twilio/video-react-native-sdk",
         {
-          "cameraPermission": "Allow Gynex to use your camera for video consultations with your doctor.",
+          "cameraPermission": "Allow Gynex to use your camera for video consultations with your doctor and to take a profile picture.",
           "microphonePermission": "Allow Gynex to use your microphone for video consultations with your doctor."
         }
       ],

@@ -24,6 +24,8 @@ export default function RootLayout() {
       <StripeProvider
         publishableKey={process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? ""}
         urlScheme="gyneclinics"
+        // Apple Pay: your Apple Merchant ID (merchant.com.…), also set in app.json for the build.
+        merchantIdentifier={process.env.EXPO_PUBLIC_APPLE_MERCHANT_ID || undefined}
       >
         <SafeAreaProvider>
           <ThemeProvider>

@@ -238,11 +238,32 @@ export default function BookScreen() {
         if (started.status === 409 && /free/i.test(started.message)) await bookFree();
         else return fail("Payment couldn't start", started.message);
       } else {
+        // The backend sets the price from your phone number's country; say so if it differs from what we showed.
+        if (started.data.amount !== price.amount || started.data.currency !== price.currency) {
+          setWorking(null);
+          const total = formatMoney(started.data.amount, started.data.currency);
+          const go = await new Promise<boolean>((resolve) =>
+            Alert.alert(
+              "Price for your country",
+              `Prices follow the country of your mobile number, so this consultation costs ${total}.`,
+              [
+                { text: "Cancel", style: "cancel", onPress: () => resolve(false) },
+                { text: `Pay ${total}`, onPress: () => resolve(true) },
+              ],
+              { cancelable: true, onDismiss: () => resolve(false) },
+            ),
+          );
+          if (!go) return;
+          setWorking("Opening secure payment…");
+        }
         const { error: initError } = await initPaymentSheet({
           merchantDisplayName: "Gynex",
           paymentIntentClientSecret: started.data.clientSecret,
           returnURL: "gyneclinics://stripe-redirect",
           allowsDelayedPaymentMethods: false,
+          // Wallets: Google Pay on Android; Apple Pay on iOS once an Apple Merchant ID is set.
+          googlePay: { merchantCountryCode: "GB", currencyCode: started.data.currency, testEnv: started.data.mode === "test" },
+          ...(process.env.EXPO_PUBLIC_APPLE_MERCHANT_ID ? { applePay: { merchantCountryCode: "GB" } } : {}),
         });
         if (initError) return fail("Payment couldn't start", initError.message);
         setWorking(null);
@@ -255,6 +276,8 @@ export default function BookScreen() {
         // Stripe may take a moment; the webhook also saves the booking.
         for (let attempt = 0; attempt < 6 && !result; attempt++) {
           const confirmed = await confirmCheckout(started.data.paymentIntentId);
+          // 409: the slot was taken while paying, and the backend refunded the payment.
+          if (!confirmed.ok && confirmed.status === 409) return fail("This time was just taken", confirmed.message);
           if (!confirmed.ok) return fail("Payment received", `${confirmed.message} Your booking will show in My consultations shortly.`);
           if (confirmed.data.booked) {
             const b = confirmed.data.booked;

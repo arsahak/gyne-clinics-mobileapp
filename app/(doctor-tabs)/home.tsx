@@ -1,7 +1,7 @@
 import { HERO_GRADIENT } from "@/constants/brand";
 import { AdBanner } from "@/components";
 import type { ChatSummary } from "@/lib/chat";
-import { timeline } from "@/lib/consultation";
+import { canVideoCall, timeline } from "@/lib/consultation";
 import { formatMoney } from "@/lib/locale/regions";
 import { getMyChats } from "@/lib/services/chats";
 import { getMyConsultations } from "@/lib/services/consultations";
@@ -29,7 +29,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
-import { CalendarClock, CheckCircle2, ChevronRight, Star, Wallet } from "lucide-react-native";
+import { CalendarClock, CheckCircle2, ChevronRight, Star, Video, Wallet } from "lucide-react-native";
 import { DoctorHomeSkeleton } from "@/components/ui/Skeleton";
 
 // The doctor's day, from the backend (same data as the webapp's doctor
@@ -350,7 +350,16 @@ export default function DoctorHomeScreen() {
                       {c.mode === "instant" ? "Chat now" : formatTime(t.startsAt)} · {c.concern}
                     </Text>
                   </View>
-                  {t.state === "active" ? (
+                  {canVideoCall(t, now) ? (
+                    <Pressable
+                      onPress={() => router.push({ pathname: "/consultation/video-call", params: { reference: c.id } })}
+                      style={({ pressed }) => [s.pill, { backgroundColor: accent, gap: 5 }, pressed && s.pressed]}
+                      accessibilityLabel={`Video call with ${c.patient?.name || "the patient"}`}
+                    >
+                      <Video size={13} color="#fff" />
+                      <Text style={[s.pillText, { color: "#fff" }]}>Video</Text>
+                    </Pressable>
+                  ) : t.state === "active" ? (
                     <View style={[s.pill, { backgroundColor: "#dcfce7" }]}>
                       <View style={[s.pillDot, { backgroundColor: "#16a34a" }]} />
                       <Text style={[s.pillText, { color: "#15803d" }]}>Open</Text>

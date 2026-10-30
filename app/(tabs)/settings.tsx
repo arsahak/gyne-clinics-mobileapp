@@ -477,7 +477,7 @@ export default function SettingsScreen() {
             </View>
             <View style={s.menuCopy}>
               <Text variant="label" style={s.menuTitle}>
-                Test video call
+                Camera check
               </Text>
               <Text variant="caption" color="textMuted">
                 Check your camera and microphone

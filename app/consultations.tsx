@@ -1,5 +1,5 @@
 import { Chip, DoctorAvatar } from "@/components/doctors";
-import { consultationDoctor, type ConsultationDoctor, type ConsultationTimeline, STATE_LABEL, timeline } from "@/lib/consultation";
+import { canVideoCall, consultationDoctor, type ConsultationDoctor, type ConsultationTimeline, STATE_LABEL, timeline } from "@/lib/consultation";
 import { formatMoney, type RegionId, REGIONS } from "@/lib/locale/regions";
 import { getDoctors } from "@/lib/services/doctors";
 import type { Consultation, Doctor } from "@/lib/types";
@@ -7,7 +7,7 @@ import { useMyConsultations } from "@/lib/useMyConsultations";
 import { useTheme } from "@/theme";
 import { differenceInCalendarDays, format, formatDistanceStrict } from "date-fns";
 import { useFocusEffect, useRouter } from "expo-router";
-import { ArrowLeft, CalendarCheck, CalendarClock, Clock, MessageCircle, ReceiptText, Zap } from "lucide-react-native";
+import { ArrowLeft, CalendarCheck, CalendarClock, Clock, MessageCircle, ReceiptText, Video, Zap } from "lucide-react-native";
 import { useCallback, useMemo, useState } from "react";
 import { Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -212,6 +212,16 @@ function ConsultationCard({ row, now, onReceipt }: { row: Row; now: Date; onRece
       </View>
 
       <View style={[s.actions, { borderTopColor: colors.border }]}>
+        {canVideoCall(t, now) && (
+          <Pressable
+            onPress={() => router.push({ pathname: "/consultation/video-call", params: { reference: c.id } })}
+            style={[s.action, { backgroundColor: accent }]}
+            accessibilityLabel="Join the video call"
+          >
+            <Video size={15} color="#fff" />
+            <Text style={{ color: "#fff", fontWeight: "800", fontSize: 13 }}>Video call</Text>
+          </Pressable>
+        )}
         {doctor.listed ? (
           <Pressable
             onPress={() => router.push(`/consultation/${c.doctorId}`)}

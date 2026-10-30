@@ -76,6 +76,8 @@ export interface CheckoutStart {
   reference: string;
   amount: number;
   currency: string;
+  /** The region actually charged (from the phone number's country); can differ from the one sent. */
+  regionId?: string;
 }
 
 /** A paid consultation, step 1: the backend prices it and opens a Stripe payment. */

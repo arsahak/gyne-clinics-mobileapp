@@ -101,7 +101,12 @@ export interface TestCallTicket {
   maxMinutes: number;
 }
 
-/** A Twilio Video token for the shared 30-minute test room. */
+/** A Twilio Video token for your own private room, to check camera and microphone. */
 export function joinTestCall() {
   return api<TestCallTicket>("/video/test-call", { method: "POST" });
+}
+
+/** A Twilio Video token for one consultation's call (its patient or doctor only). */
+export function joinConsultationCall(reference: string) {
+  return api<TestCallTicket>(`/video/consultations/${encodeURIComponent(reference)}`, { method: "POST" });
 }

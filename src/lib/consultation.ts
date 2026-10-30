@@ -71,6 +71,15 @@ export function timeline(c: Consultation, now: Date): ConsultationTimeline {
 }
 
 /** Patients can message only during an active session or the free follow-up window. */
+/** The video call opens this long before the start (same as the backend). */
+export const CALL_OPENS_EARLY_MINUTES = 10;
+
+/** Whether the consultation's video call can be joined now: from shortly before the start until the session ends. */
+export function canVideoCall(t: ConsultationTimeline, now: Date) {
+  if (t.state === "active") return true;
+  return t.state === "upcoming" && t.startsAt.getTime() - now.getTime() <= CALL_OPENS_EARLY_MINUTES * 60_000;
+}
+
 export function canMessage(state: ConsultationState) {
   return state === "active" || state === "follow_up";
 }

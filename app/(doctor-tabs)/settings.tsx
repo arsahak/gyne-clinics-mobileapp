@@ -255,7 +255,7 @@ export default function DoctorSettingsScreen() {
           <View style={[s.rowDivider, { backgroundColor: colors.border }]} />
           <MenuRow icon={<Wallet size={19} color={colors.teal} />} iconBg={colors.tealLight} title="Earnings" subtitle="Balance and withdrawals" onPress={showEarnings} colors={colors} />
           <View style={[s.rowDivider, { backgroundColor: colors.border }]} />
-          <MenuRow icon={<Video size={19} color={accent} />} iconBg={accentBg} title="Test video call" subtitle="Check your camera and microphone" onPress={() => router.push("/consultation/video-call")} colors={colors} />
+          <MenuRow icon={<Video size={19} color={accent} />} iconBg={accentBg} title="Camera check" subtitle="Check your camera and microphone" onPress={() => router.push("/consultation/video-call")} colors={colors} />
         </View>
 
         <Text style={[s.sectionLabel, { color: colors.textMuted }]}>APPEARANCE</Text>
